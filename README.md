@@ -1,5 +1,11 @@
 # Next
 
+Source-available under [PolyForm Noncommercial 1.0.0](LICENSE).
+Uses outside its permitted purposes require a [separate written commercial
+license](COMMERCIAL_LICENSE.md). This is not an OSI-approved open-source license.
+See [NOTICE](NOTICE), [third-party licenses](THIRD_PARTY_NOTICES.md), and
+[contribution requirements](CONTRIBUTING.md).
+
 A small, local, **read-only** assistant for choosing what to work on now.
 
 Choose your available time and energy. Next reads Todoist, shortlists at most 18 tasks locally, and asks AI for one next action and two alternatives. **Make It Easier** turns a recommendation into 1–3 smaller steps.
