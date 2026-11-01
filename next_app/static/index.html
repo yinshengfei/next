@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="A small local assistant to help you choose what to work on next.">
+  <title>Next — What should I do now?</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Next home"><span class="brand-mark" aria-hidden="true">↗</span> next<span class="brand-period">.</span></a>
+      <span class="connection" id="connection">On your Mac</span>
+    </header>
+
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">LESS DECIDING. MORE DOING.</p>
+      <h1 id="page-title">What should I do now?</h1>
+      <p class="subtitle">Start with the time and energy you have.</p>
+    </section>
+
+    <aside class="setup-note" id="setup-note" hidden>
+      <strong>One quick setup first</strong>
+      <p id="setup-message"></p>
+      <p>In Terminal, activate the app’s environment and run <code>python -m next_app setup</code>. Then refresh this page.</p>
+    </aside>
+
+    <form id="preferences" class="preferences">
+      <fieldset>
+        <legend>How much time do you have?</legend>
+        <div class="choices" id="time-choices">
+          <button type="button" class="choice" data-minutes="15" aria-pressed="false">15 <span>min</span></button>
+          <button type="button" class="choice" data-minutes="30" aria-pressed="true">30 <span>min</span></button>
+          <button type="button" class="choice" data-minutes="60" aria-pressed="false">60 <span>min</span></button>
+          <button type="button" class="choice" data-minutes="90" aria-pressed="false">90 <span>min</span></button>
+          <button type="button" class="choice custom" data-minutes="custom" aria-pressed="false">Custom</button>
+        </div>
+        <div id="custom-wrap" class="custom-wrap" hidden>
+          <label for="custom-minutes">Minutes</label>
+          <input id="custom-minutes" name="custom-minutes" type="number" min="5" max="480" step="1" inputmode="numeric" value="45" disabled>
+          <span class="hint">5–480 minutes</span>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>How’s your energy?</legend>
+        <div class="choices energy-choices" id="energy-choices">
+          <button type="button" class="choice" data-energy="low" aria-pressed="false"><span class="energy-dot low" aria-hidden="true"></span>Low</button>
+          <button type="button" class="choice" data-energy="medium" aria-pressed="true"><span class="energy-dot medium" aria-hidden="true"></span>Medium</button>
+          <button type="button" class="choice" data-energy="high" aria-pressed="false"><span class="energy-dot high" aria-hidden="true"></span>High</button>
+        </div>
+      </fieldset>
+      <button id="find-button" class="primary-button" type="submit"><span aria-hidden="true">✧</span> Find My Next Action <span class="button-arrow" aria-hidden="true">→</span></button>
+    </form>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div id="error" class="error" role="alert" hidden></div>
+
+    <section id="empty-state" class="empty-state">
+      <span class="empty-symbol" aria-hidden="true">↗</span>
+      <h2>A good place to start.</h2>
+      <p>One useful action, two alternatives.<br>Chosen from your Todoist tasks.</p>
+    </section>
+
+    <section id="results" aria-labelledby="results-title" hidden>
+      <div class="section-heading">
+        <h2 id="results-title" class="eyebrow" tabindex="-1">YOUR NEXT ACTION</h2>
+        <span id="result-context" class="hint"></span>
+      </div>
+      <div id="primary-result"></div>
+      <div id="alternatives-section" hidden>
+        <h2 class="eyebrow alternatives-title">OR, A DIFFERENT DIRECTION</h2>
+        <div id="alternatives" class="alternatives"></div>
+      </div>
+      <div class="results-footer">
+        <button type="button" id="alternatives-button" class="text-button">Show other tasks <span aria-hidden="true">↻</span></button>
+        <p id="candidate-note" class="hint"></p>
+      </div>
+    </section>
+
+    <footer class="page-footer"><span>Small steps count.</span><span>Read-only · Your tasks stay in Todoist</span></footer>
+  </main>
+
+  <template id="recommendation-template">
+    <article class="recommendation">
+      <div class="card-topline"><span class="project"></span><span class="duration"></span></div>
+      <a class="task-link" target="_blank" rel="noopener noreferrer"></a>
+      <h3 class="action-title"></h3>
+      <p class="why"></p>
+      <p class="task-date hint"></p>
+      <div class="first-step"><span class="step-label">START HERE</span><p></p></div>
+      <div class="assumptions" hidden><span class="step-label">ASSUMPTIONS</span><ul></ul></div>
+      <button type="button" class="easier-button">✧ Make It Easier</button>
+      <div class="breakdown" aria-live="polite" hidden></div>
+    </article>
+  </template>
+</body>
+</html>
