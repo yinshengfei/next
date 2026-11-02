@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from next_app import app as app_module
 from next_app.chat_store import ChatStore
 from next_app.config import Settings
-from next_app.models import AIChatReply, Task
+from next_app.models import AIChatReply, ChatRequest, ConfirmDraftsRequest, Task
 from next_app.todoist import TodoistWriteError, create_task
 
 
@@ -149,3 +149,11 @@ def test_todoist_create_uses_v1_json_and_handles_ambiguous_timeout(monkeypatch):
     assert requests[0].url.path == "/api/v1/tasks"
     assert json.loads(requests[0].content) == {"content": "Buy milk", "priority": 1}
     assert requests[0].headers["authorization"] == "Bearer secret"
+
+
+def test_long_source_plan_and_multiple_drafts_fit_chat_contract():
+    assert len(ChatRequest(message="计划" * 5000).message) == 10000
+    drafts = [{"content": "Task {}".format(index)} for index in range(27)]
+    assert len(AIChatReply(reply="Review", drafts=drafts).drafts) == 27
+    confirmed = [{"id": "draft-{}".format(index), "content": "Task {}".format(index)} for index in range(27)]
+    assert len(ConfirmDraftsRequest(drafts=confirmed).drafts) == 27

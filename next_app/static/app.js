@@ -59,9 +59,9 @@ function showError(message) {
   $("#status").textContent = "";
 }
 
-async function post(path, payload) {
+async function post(path, payload, timeoutMs = 100000) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 100000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(path, {
       method: "POST",
@@ -350,7 +350,7 @@ $("#create-drafts").addEventListener("click", async () => {
   $("#chat-error").hidden = true;
   $("#chat-status").textContent = `Creating ${drafts.length} task${drafts.length === 1 ? "" : "s"} in Todoist…`;
   try {
-    const data = await post("/api/chat/confirm", { drafts });
+    const data = await post("/api/chat/confirm", { drafts }, 300000);
     await refreshChat();
     const created = data.results.filter((item) => item.state === "created").length;
     const uncertain = data.results.filter((item) => item.state === "uncertain").length;

@@ -87,11 +87,11 @@ class TaskDraft(StrictModel):
 
 class AIChatReply(StrictModel):
     reply: str = Field(min_length=1, max_length=6000)
-    drafts: List[TaskDraft] = Field(default_factory=list, max_length=6)
+    drafts: List[TaskDraft] = Field(default_factory=list, max_length=35)
 
 
 class ChatRequest(StrictModel):
-    message: str = Field(min_length=1, max_length=4000)
+    message: str = Field(min_length=1, max_length=12000)
 
 
 class ConfirmedDraft(StrictModel):
@@ -104,4 +104,4 @@ class ConfirmedDraft(StrictModel):
 
 
 class ConfirmDraftsRequest(StrictModel):
-    drafts: List[ConfirmedDraft] = Field(min_length=1, max_length=6)
+    drafts: List[ConfirmedDraft] = Field(min_length=1, max_length=35)
