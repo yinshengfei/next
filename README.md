@@ -1,5 +1,7 @@
 # Next
 
+Chat can propose creation, updates, and completion of Todoist tasks. Existing-task actions appear beside the AI reply with the original task link and a field-by-field preview. Only an explicit Confirm click applies the stored proposal; Cancel leaves Todoist unchanged. Confirmation rechecks the current task and rejects stale previews. Action state persists locally, duplicate confirmations are rejected, and ambiguous write failures require checking Todoist before retrying. Successful changes invalidate the Overview cache.
+
 Source-available under [PolyForm Noncommercial 1.0.0](LICENSE).
 Uses outside its permitted purposes require a [separate written commercial
 license](COMMERCIAL_LICENSE.md). This is not an OSI-approved open-source license.

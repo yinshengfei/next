@@ -19,7 +19,7 @@ from .chat_store import ChatStore
 from .overview import build_overview
 from .overview_store import OverviewStore
 from .config import Settings, SetupError, get_secret, load_settings
-from .models import ChatRequest, ConfirmDraftsRequest, EasierRequest, OverviewRequest, ProgressConfirm, ProgressRequest, RecommendationAction, RecommendationRequest
+from .models import ChatActionDecision, ChatRequest, ConfirmDraftsRequest, EasierRequest, OverviewRequest, ProgressConfirm, ProgressRequest, RecommendationAction, RecommendationRequest
 from .todoist import ServiceError, TodoistWriteError, create_task, fetch_account_started, fetch_completed_range, fetch_projects, fetch_recent_completed, fetch_tasks, write_existing_task
 
 
@@ -215,8 +215,64 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
             history = chat_store().recent() + [{"role": "user", "content": body.message.strip()}]
             result = await ai.chat(settings, key, history, tasks, project_options)
             chat_store().add_message("user", body.message.strip())
-            saved = chat_store().add_reply(result.reply, result.drafts)
+            by_id = {task.id: task for task in tasks}
+            actions = []
+            seen = set()
+            for action in result.actions:
+                if action.task_id not in by_id or action.task_id in seen:
+                    raise ServiceError("The AI selected an invalid task. Please try again.", 422)
+                seen.add(action.task_id)
+                changes = action.model_dump(include={"content", "description", "due_date", "priority"}, exclude_none=True)
+                if action.clear_due:
+                    if action.due_date:
+                        raise ServiceError("Conflicting due date changes. Please try again.", 422)
+                    changes["due_string"] = "no date"
+                if action.due_date:
+                    try:
+                        date.fromisoformat(action.due_date)
+                    except ValueError:
+                        raise ServiceError("The AI proposed an invalid date. Please try again.", 422) from None
+                if ("content" in changes and not changes["content"].strip()) or (action.operation == "update" and not changes) or (action.operation == "complete" and changes):
+                    raise ServiceError("The AI proposed an invalid change. Please try again.", 422)
+                actions.append({"operation": action.operation, "task_id": action.task_id,
+                                "reason": action.reason, "before": by_id[action.task_id].model_dump(), "changes": changes})
+            saved = chat_store().add_reply(result.reply, result.drafts, actions)
             return {"reply": result.reply, "drafts": saved}
+
+    @app.post("/api/chat/action")
+    async def decide_chat_action(body: ChatActionDecision):
+        store = chat_store()
+        saved = store.action(body.id)
+        if not saved or saved["state"] != "pending":
+            raise ServiceError("This action is no longer pending. Refresh chat.", 409)
+        if body.decision == "cancel":
+            if not store.transition_action(body.id, "pending", "cancelled"):
+                raise ServiceError("This action is already being processed.", 409)
+            return {"state": "cancelled"}
+        proposal = saved["payload"]
+        token = await asyncio.to_thread(get_secret, "todoist")
+        current = next((task for task in await fetch_tasks(token) if task.id == proposal["task_id"]), None)
+        if current is None or current.model_dump() != proposal["before"]:
+            store.transition_action(body.id, "pending", "stale", "Task changed or finished. Ask Chat for a fresh preview.")
+            raise ServiceError("This task changed or was completed since the preview. Ask Chat for a fresh preview.", 409)
+        if not store.transition_action(body.id, "pending", "applying"):
+            raise ServiceError("This action is already being processed.", 409)
+        try:
+            await write_existing_task(token, proposal["task_id"], proposal["changes"],
+                                      complete=proposal["operation"] == "complete")
+        except TodoistWriteError as exc:
+            state = "uncertain" if exc.uncertain else "pending"
+            store.transition_action(body.id, "applying", state, str(exc))
+            overview_store().invalidate()
+            raise ServiceError(str(exc), exc.status_code) from None
+        except Exception:
+            store.transition_action(body.id, "applying", "uncertain", "Check Todoist before retrying.")
+            overview_store().invalidate()
+            raise ServiceError("Could not confirm the result. Check Todoist before retrying.") from None
+        store.transition_action(body.id, "applying", "applied")
+        overview_store().invalidate()
+        store.add_message("assistant", "Confirmed in Todoist: {} — {}".format(proposal["operation"], current.name))
+        return {"state": "applied"}
 
     @app.post("/api/chat/confirm")
     async def confirm_drafts(body: ConfirmDraftsRequest):

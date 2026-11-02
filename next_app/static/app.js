@@ -472,12 +472,62 @@ function renderDraft(draft) {
   return article;
 }
 
+function renderChatAction(action) {
+  const card = node("article", undefined, "draft-card chat-action-card");
+  card.append(node("h3", `${action.operation === "complete" ? "完成事项" : "修改事项"} · ${action.before.name}`));
+  card.append(node("p", action.reason));
+  const link = node("a", "查看 Todoist 原事项");
+  link.href = `https://app.todoist.com/app/task/${encodeURIComponent(action.task_id)}`;
+  link.target = "_blank"; link.rel = "noopener noreferrer"; card.append(link);
+  if (action.operation === "complete") {
+    card.append(node("p", "未完成 → 已完成。点击 Confirm 后同步到 Todoist。"));
+  } else {
+    const fields = { content: ["标题", "name"], description: ["说明 / 进度", "description"],
+      due_date: ["日期", "due"], priority: ["优先级", "priority"], due_string: ["日期", "due"] };
+    Object.entries(action.changes).forEach(([key, value]) => {
+      const [label, source] = fields[key];
+      let before = action.before[source] || "未设置";
+      let after = key === "due_string" ? "无日期" : value || "清空";
+      if (key === "priority") { before = `P${5 - action.before.priority}`; after = `P${5 - value}`; }
+      card.append(node("h4", label), node("p", `原来：${before}`), node("p", `改为：${after}`));
+    });
+  }
+  if (action.error) card.append(node("p", action.error, "error-inline"));
+  if (action.state === "pending") {
+    const confirm = node("button", "Confirm · 确认执行", "primary-button");
+    const cancel = node("button", "取消", "text-button");
+    for (const [button, decision] of [[confirm, "confirm"], [cancel, "cancel"]]) {
+      button.type = "button";
+      button.addEventListener("click", async () => {
+        if (busy) return;
+        setBusy(true); $("#chat-error").hidden = true;
+        $("#chat-status").textContent = decision === "confirm" ? "正在同步到 Todoist…" : "正在取消…";
+        try {
+          await post("/api/chat/action", { id: action.id, decision });
+          overviewLoaded = false;
+          $("#chat-status").textContent = decision === "confirm" ? "已确认并同步到 Todoist。" : "已取消，事项未修改。";
+        } catch (error) { showChatError(error.message); }
+        finally { try { await refreshChat(); } catch (error) { showChatError(error.message); } setBusy(false); }
+      });
+    }
+    card.append(confirm, cancel);
+  } else {
+    const states = { applied: "已执行", cancelled: "已取消", stale: "已过期，请重新生成", uncertain: "结果待核对，请查看 Todoist", applying: "正在执行" };
+    card.append(node("p", states[action.state] || action.state, "hint"));
+  }
+  return card;
+}
+
 async function refreshChat() {
   const response = await fetch("/api/chat/history");
   if (!response.ok) throw new Error("Cannot load local chat history.");
   const data = await response.json();
   const messages = $("#chat-messages");
-  messages.replaceChildren(...data.messages.map(renderMessage));
+  messages.replaceChildren(...data.messages.map((message) => {
+    const item = renderMessage(message);
+    (data.actions || []).filter((action) => action.message_id === message.id).forEach((action) => item.append(renderChatAction(action)));
+    return item;
+  }));
   messages.scrollTop = messages.scrollHeight;
   $("#draft-list").replaceChildren(...data.drafts.map(renderDraft));
   $("#draft-section").hidden = data.drafts.length === 0;

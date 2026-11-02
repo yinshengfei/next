@@ -102,14 +102,22 @@ async def chat(
             "conversation": history,
             "expected_draft_count": expected_draft_count,
             "existing_tasks_sample": [
-                {"name": task.name[:300], "project": task.project_name[:150], "due": task.due}
-                for task in tasks[:40]
+                {**task.ai_data(), "description": task.description, "priority": task.priority}
+                for task in tasks
             ],
             "existing_task_count": len(tasks),
             "projects": projects[:100],
         },
         AIChatReply,
         "You can discuss general topics and help plan work. Answer the latest user message naturally. "
+        "For changes to existing tasks, return actions with operation update or complete and the exact "
+        "provided task_id. Never create a duplicate to represent an update. Complete only when the user "
+        "says that task is finished, not merely started or partly done. When matching is ambiguous, "
+        "ask one question and propose no action for that ambiguous target. For update, supply only "
+        "changed fields; null means unchanged. clear_due explicitly removes a due date. Preserve "
+        "existing description details when adding progress. A complete action must have no changed "
+        "fields. Do not propose both update and complete for the same task. Every action is a preview "
+        "requiring the user's Confirm click; never claim it was executed. "
         "When the user wants to capture actionable work, include up to 35 concise Todoist task "
         "drafts. When importing a long plan that includes an explicit complete task list, return "
         "ONE draft for EVERY distinct item in that list, including future, conditional, optional, "
@@ -129,6 +137,12 @@ async def chat(
     )
     if any(draft.project_id is not None and draft.project_id not in allowed_projects for draft in result.drafts):
         raise ServiceError("The AI selected an unknown Todoist project. Please try again.")
+    allowed_tasks = {task.id for task in tasks}
+    seen = set()
+    for action in result.actions:
+        if action.task_id not in allowed_tasks or action.task_id in seen:
+            raise ServiceError("The AI selected an unknown or duplicate task. Please try again.")
+        seen.add(action.task_id)
     if expected_draft_count is not None and len(result.drafts) != expected_draft_count:
         raise ServiceError(
             "The AI returned {} of {} items in the complete list. Please try again.".format(

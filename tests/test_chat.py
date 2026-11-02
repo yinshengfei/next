@@ -19,6 +19,52 @@ HEADERS = {"X-Next-Local": "1"}
 PROJECTS = [{"id": "p1", "name": "Work"}]
 
 
+@pytest.mark.parametrize("operation,changes", [("complete", {}), ("update", {"description": "Half finished"})])
+def test_chat_action_requires_confirmation_and_cannot_repeat(monkeypatch, tmp_path, operation, changes):
+    client, path = setup_client(monkeypatch, tmp_path, {
+        "reply": "Review this action", "actions": [{"operation": operation, "task_id": "existing", "reason": "User requested", **changes}],
+    })
+    with client:
+        writes = []
+        async def write(token, task_id, payload, complete=False):
+            writes.append((task_id, payload, complete))
+        monkeypatch.setattr(app_module, "write_existing_task", write)
+        assert client.post("/api/chat", headers=HEADERS, json={"message": "Plan my day"}).status_code == 200
+        assert writes == []
+        action = client.get("/api/chat/history").json()["actions"][0]
+        assert action["before"]["name"] == "Existing task"
+        body = {"id": action["id"], "decision": "confirm"}
+        assert client.post("/api/chat/action", headers=HEADERS, json=body).status_code == 200
+        assert client.post("/api/chat/action", headers=HEADERS, json=body).status_code == 409
+        assert writes == [("existing", changes, operation == "complete")]
+        assert ChatStore(path).history()["actions"][0]["state"] == "applied"
+
+
+@pytest.mark.parametrize("scenario", ["cancel", "stale", "uncertain"])
+def test_chat_action_cancel_stale_and_uncertain(monkeypatch, tmp_path, scenario):
+    client, path = setup_client(monkeypatch, tmp_path, {
+        "reply": "Review completion", "actions": [{"operation": "complete", "task_id": "existing", "reason": "Done"}],
+    })
+    with client:
+        client.post("/api/chat", headers=HEADERS, json={"message": "Plan my day"})
+        action = client.get("/api/chat/history").json()["actions"][0]
+        writes = []
+        async def write(*args, **kwargs):
+            writes.append(1)
+            raise TodoistWriteError("Connection lost", uncertain=True)
+        monkeypatch.setattr(app_module, "write_existing_task", write)
+        if scenario == "stale":
+            async def tasks(token):
+                return [Task(id="existing", name="Changed elsewhere")]
+            monkeypatch.setattr(app_module, "fetch_tasks", tasks)
+        decision = "cancel" if scenario == "cancel" else "confirm"
+        client.post("/api/chat/action", headers=HEADERS, json={"id": action["id"], "decision": decision})
+        state = ChatStore(path).history()["actions"][0]["state"]
+        assert state == {"cancel": "cancelled", "stale": "stale", "uncertain": "uncertain"}[scenario]
+        assert writes == ([1] if scenario == "uncertain" else [])
+        assert client.post("/api/chat/action", headers=HEADERS, json={"id": action["id"], "decision": "confirm"}).status_code == 409
+
+
 def setup_client(monkeypatch, tmp_path, reply):
     monkeypatch.setattr(app_module, "get_secret", lambda account: "test-secret")
 

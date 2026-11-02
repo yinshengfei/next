@@ -161,9 +161,26 @@ class TaskDraft(StrictModel):
     priority: int = Field(default=1, strict=True, ge=1, le=4)  # Todoist API: 4 is P1, 1 is P4.
 
 
+class ChatTaskAction(StrictModel):
+    operation: Literal["update", "complete"]
+    task_id: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=1000)
+    content: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=3000)
+    due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    clear_due: bool = False
+    priority: Optional[int] = Field(default=None, strict=True, ge=1, le=4)
+
+
+class ChatActionDecision(StrictModel):
+    id: str = Field(min_length=1, max_length=100)
+    decision: Literal["confirm", "cancel"]
+
+
 class AIChatReply(StrictModel):
     reply: str = Field(min_length=1, max_length=6000)
     drafts: List[TaskDraft] = Field(default_factory=list, max_length=35)
+    actions: List[ChatTaskAction] = Field(default_factory=list, max_length=35)
 
 
 class ChatRequest(StrictModel):

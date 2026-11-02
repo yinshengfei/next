@@ -38,12 +38,20 @@ class ChatStore:
                     task_id TEXT,
                     error TEXT
                 );
+                CREATE TABLE IF NOT EXISTS actions (
+                    id TEXT PRIMARY KEY,
+                    message_id INTEGER NOT NULL REFERENCES messages(id),
+                    payload TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending',
+                    error TEXT
+                );
             """)
             # A crash after a Todoist write may leave a draft in progress.
             # Require a manual Todoist check rather than silently retrying.
             db.execute("UPDATE drafts SET state='uncertain', error=? WHERE state='creating'", (
                 "Next closed during creation. Check Todoist before trying again.",
             ))
+            db.execute("UPDATE actions SET state='uncertain', error='Next closed during execution. Check Todoist.' WHERE state='applying'")
 
     def connect(self):
         db = sqlite3.connect(str(self.path), timeout=10)
@@ -55,7 +63,7 @@ class ChatStore:
         with self.connect() as db:
             return db.execute("INSERT INTO messages(role, content) VALUES (?, ?)", (role, content)).lastrowid
 
-    def add_reply(self, content: str, drafts: list) -> list:
+    def add_reply(self, content: str, drafts: list, actions: list = None) -> list:
         with self.connect() as db:
             message_id = db.execute(
                 "INSERT INTO messages(role, content) VALUES ('assistant', ?)", (content,)
@@ -69,6 +77,9 @@ class ChatStore:
                     (draft_id, message_id, json.dumps(payload, ensure_ascii=False)),
                 )
                 saved.append({"id": draft_id, **payload, "state": "pending"})
+            for action in actions or []:
+                db.execute("INSERT INTO actions(id, message_id, payload) VALUES (?, ?, ?)",
+                           (uuid4().hex, message_id, json.dumps(action, ensure_ascii=False)))
             return saved
 
     def recent(self, limit: int = 12) -> list:
@@ -89,7 +100,20 @@ class ChatStore:
                  "task_id": row["task_id"], "error": row["error"]}
                 for row in db.execute("SELECT * FROM drafts ORDER BY rowid")
             ]
-        return {"messages": messages, "drafts": drafts}
+            actions = [{"id": row["id"], "message_id": row["message_id"],
+                        **json.loads(row["payload"]), "state": row["state"], "error": row["error"]}
+                       for row in db.execute("SELECT * FROM actions ORDER BY rowid")]
+        return {"messages": messages, "drafts": drafts, "actions": actions}
+
+    def action(self, action_id):
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM actions WHERE id=?", (action_id,)).fetchone()
+        return {**dict(row), "payload": json.loads(row["payload"])} if row else None
+
+    def transition_action(self, action_id, old, new, error=None):
+        with self.connect() as db:
+            return db.execute("UPDATE actions SET state=?, error=? WHERE id=? AND state=?",
+                              (new, error, action_id, old)).rowcount == 1
 
     def claim(self, draft_id: str, payload: dict) -> bool:
         with self.connect() as db:
@@ -109,8 +133,11 @@ class ChatStore:
 
     def clear(self) -> bool:
         with self.connect() as db:
+            if db.execute("SELECT 1 FROM actions WHERE state='applying' LIMIT 1").fetchone():
+                return False
             if db.execute("SELECT 1 FROM drafts WHERE state='creating' LIMIT 1").fetchone():
                 return False
             db.execute("DELETE FROM drafts")
+            db.execute("DELETE FROM actions")
             db.execute("DELETE FROM messages")
         return True

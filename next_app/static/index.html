@@ -41,7 +41,7 @@
         <div><p class="eyebrow">TALK IT THROUGH</p><h1 id="chat-title">What’s on your mind?</h1></div>
         <button type="button" id="clear-chat" class="text-button">Clear chat history</button>
       </div>
-      <p class="subtitle">Ask anything, or describe what you need to do. I’ll prepare Todoist tasks for your review.</p>
+      <p class="subtitle">直接描述要新建、修改或完成的事项。AI 会生成操作卡片，只有点击 Confirm 后才会同步到 Todoist。</p>
       <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
       <p id="chat-status" class="status" role="status" aria-live="polite"></p>
       <div id="chat-error" class="error" role="alert" hidden></div>
@@ -53,7 +53,7 @@
       <section id="draft-section" class="draft-section" aria-labelledby="draft-title" hidden>
         <div class="section-heading"><h2 id="draft-title">Review before creating</h2><span class="hint">Nothing is sent to Todoist until you confirm.</span></div>
         <div id="draft-list"></div>
-        <button id="create-drafts" type="button" class="primary-button">Create selected tasks in Todoist</button>
+        <button id="create-drafts" type="button" class="primary-button">Confirm · Create selected tasks in Todoist</button>
       </section>
     </section>
 
