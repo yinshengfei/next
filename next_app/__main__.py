@@ -47,7 +47,7 @@ async def check_provider(settings: Settings) -> None:
     from .models import Preferences, Task
 
     key = await asyncio.to_thread(get_secret, settings.ai_key_account)
-    print("Checking " + settings.base_url + " with model " + settings.model)
+    print("Checking " + settings.base_url + " with model " + (settings.recommendation_model or settings.model))
     print("One synthetic task only; this request uses provider credits. No Todoist data is read.")
     await recommend(
         settings, key,

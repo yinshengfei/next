@@ -138,6 +138,8 @@ async def chat(
 
 
 async def recommend(settings: Settings, key: str, tasks: List[Task], preferences: Preferences) -> AIRecommendations:
+    if settings.recommendation_model:
+        settings = settings.model_copy(update={"model": settings.recommendation_model})
     important = {value.casefold() for value in settings.important_projects}
     candidates = []
     for task in tasks:

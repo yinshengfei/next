@@ -164,6 +164,7 @@ Its defaults are:
   "base_url": "https://api.openai.com/v1",
   "model": "gpt-5.4-mini",
   "overview_model": null,
+  "recommendation_model": null,
   "todoist_use_environment_proxy": true,
   "port": 8765,
   "language": "English",

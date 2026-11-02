@@ -26,6 +26,7 @@ class Settings(BaseModel):
     base_url: str = Field(default=OPENAI_BASE_URL, min_length=1, max_length=2048)
     model: str = Field(default="gpt-5.4-mini", min_length=1, max_length=100)
     overview_model: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    recommendation_model: Optional[str] = Field(default=None, min_length=1, max_length=100)
     todoist_use_environment_proxy: bool = True
     port: int = Field(default=8765, ge=1024, le=65535)
     language: str = Field(default="English", min_length=1, max_length=50)
@@ -49,7 +50,7 @@ class Settings(BaseModel):
             raise ValueError("Use the API base URL, not a complete request endpoint.")
         return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
 
-    @field_validator("model", "overview_model")
+    @field_validator("model", "overview_model", "recommendation_model")
     @classmethod
     def validate_model(cls, value: str) -> str:
         if value is None:
