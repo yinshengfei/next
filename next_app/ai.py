@@ -248,6 +248,9 @@ async def layout_overview(settings: Settings, key: str, records: list, previous_
         return []
     if settings.overview_model:
         settings = settings.model_copy(update={"model": settings.overview_model})
+    if previous_layout:
+        from .overview_patch import update_layout
+        return await update_layout(settings, key, records, previous_layout, structured_call)
     aliases = {item["task_id"]: "T{}".format(index + 1) for index, item in enumerate(records)}
     real_ids = {alias: task_id for task_id, alias in aliases.items()}
 
@@ -435,4 +438,4 @@ async def layout_overview(settings: Settings, key: str, records: list, previous_
         by_id[move.task_id].update(stream_id=stream.stream_id, stream_title=stream.title,
                                    stream_order=stream.order, area_id=area.area_id,
                                    area_title=area.title, area_order=area.order)
-    return placements
+    return [{**item, "source_record": dict(record_map[item["task_id"]])} for item in placements]

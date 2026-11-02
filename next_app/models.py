@@ -113,6 +113,11 @@ class OverviewAudit(StrictModel):
     moves: List[OverviewMove] = Field(default_factory=list, max_length=100)
 
 
+class OverviewPatch(StrictModel):
+    workstreams: List[OverviewNewWorkstream] = Field(default_factory=list, max_length=20)
+    items: List[OverviewPlacement] = Field(default_factory=list, max_length=300)
+
+
 class EasierStep(StrictModel):
     action: str = Field(min_length=1, max_length=350)
     estimated_minutes: int = Field(strict=True, ge=1, le=480)

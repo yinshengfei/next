@@ -172,18 +172,20 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
             records.sort(key=lambda item: item["task_id"])
             user_context = "\n\n".join(message["content"] for message in chat_store().recent(40)
                                         if message["role"] == "user")
-            signature = hashlib.sha256(json.dumps({"version": 5, "model": settings.overview_model or settings.model,
+            signature = hashlib.sha256(json.dumps({"version": 6, "model": settings.overview_model or settings.model,
                                                    "records": records}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
             layout_mode = "ai"
             layout_error = None
-            if records and signature != cache.meta("layout_signature") and not app.state.ai_lock.locked():
+            if not records:
+                cache.save_layout([], signature=signature)
+                layout = {}
+            elif signature != cache.meta("layout_signature") and not app.state.ai_lock.locked():
                 try:
                     async with app.state.ai_lock:
                         key = await asyncio.to_thread(get_secret, settings.ai_key_account)
                         placements = await ai.layout_overview(settings, key, records, previous_layout=layout,
                                                              planning_context=user_context)
-                    cache.save_layout(placements)
-                    cache.set_meta("layout_signature", signature)
+                    cache.save_layout(placements, signature=signature)
                     layout = {item["task_id"]: item for item in placements}
                 except ServiceError as exc:
                     layout_mode = "fallback"

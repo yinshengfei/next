@@ -63,11 +63,15 @@ class OverviewStore:
                 db.execute("INSERT INTO meta(key,value) VALUES ('backfill_until',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                            (backfill_until,))
 
-    def save_layout(self, placements):
+    def save_layout(self, placements, signature=None):
         with self.connect() as db:
-            db.execute("DELETE FROM layout")
-            db.executemany("INSERT INTO layout(id,payload) VALUES (?,?)",
-                           [(item["task_id"], json.dumps(item, ensure_ascii=False)) for item in placements])
+            previous = {row["id"]: row["payload"] for row in db.execute("SELECT id,payload FROM layout")}
+            current = {item["task_id"]: json.dumps(item, ensure_ascii=False) for item in placements}
+            db.executemany("DELETE FROM layout WHERE id=?", [(key,) for key in previous.keys() - current.keys()])
+            db.executemany("INSERT INTO layout(id,payload) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                           [(key, value) for key, value in current.items() if previous.get(key) != value])
+            if signature is not None:
+                db.execute("INSERT INTO meta(key,value) VALUES ('layout_signature',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (signature,))
 
     def invalidate(self):
         self.set_meta("dirty", "1")

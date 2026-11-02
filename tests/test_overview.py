@@ -129,9 +129,13 @@ def test_layout_repair_preserves_good_items_and_injects_only_unresolved_records(
 
 
 def test_incremental_layout_reuses_unchanged_membership_and_audits_specific_moves(monkeypatch):
-    from next_app.models import OverviewAudit, OverviewTaxonomy
+    from next_app.models import OverviewAudit, OverviewTaxonomy, OverviewPatch
     placement_inputs = []
     async def respond(settings, key, payload, schema, instruction, **kwargs):
+        if schema is OverviewPatch:
+            placement_inputs.append(payload["required_task_ids"])
+            assert payload["changes"][0]["before"]["title"] == "DTA submission"
+            return schema.model_validate({"items": [{"task_id": "open:b", "stream_id": "dta", "order": 2, "emphasis": "standard"}]})
         if schema is OverviewTaxonomy:
             return schema.model_validate({"areas": [{"area_id": "research", "title": "Research", "order": 0,
                 "workstreams": [{"stream_id": "stats", "title": "Statistics", "order": 0},
@@ -150,5 +154,5 @@ def test_incremental_layout_reuses_unchanged_membership_and_audits_specific_move
     records[1]["description"] = "Draft ready"
     second = asyncio.run(ai.layout_overview(Settings(), "key", records,
         previous_layout={item["task_id"]: item for item in first}))
-    assert placement_inputs == [["T1", "T2"], ["T2"]]
+    assert placement_inputs == [["T1", "T2"], ["open:b"]]
     assert next(item for item in second if item["task_id"] == "open:a")["stream_id"] == "stats"
