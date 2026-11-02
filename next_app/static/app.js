@@ -11,6 +11,18 @@ let cards = [];
 let overviewLoaded = false;
 let overviewLoading = false;
 let overviewSelected = "today";
+let overviewUpdatePending = false;
+let overviewUpdateTimer = null;
+
+function scheduleOverviewUpdate() {
+  overviewUpdatePending = true;
+  clearTimeout(overviewUpdateTimer);
+  overviewUpdateTimer = setTimeout(() => {
+    if (busy || overviewLoading) { scheduleOverviewUpdate(); return; }
+    overviewUpdatePending = false;
+    loadOverview(true);
+  }, 800);
+}
 
 function renderOverviewTask(task, finished) {
   const row = node("article", undefined, "overview-task");
@@ -106,13 +118,20 @@ async function loadOverview(refresh = false) {
     const data = await post("/api/overview", { refresh }, 300000);
     showOverview(data);
     $("#overview-status").textContent = data.sync_error ? `Showing cached tasks. Sync issue: ${data.sync_error}` : "";
+    $("#chat-sync").textContent = data.sync_error ? "Todoist 同步未成功，Overview 仍显示上次记录。切回窗口会自动重试。"
+      : data.layout_mode !== "ai" ? "待办已同步，AI 分组更新尚未完成；All 中仍显示所有待办。"
+      : "Overview 已自动更新 · 无日期事项请在 All 查看";
   } catch (error) {
     $("#overview-error").textContent = error.message; $("#overview-error").hidden = false;
     $("#overview-status").textContent = "";
+    $("#chat-sync").textContent = "Overview 更新未完成，创建结果请以操作卡片为准。切回窗口会自动重试。";
   } finally { overviewLoading = false; $("#overview-refresh").disabled = false; }
 }
 
 $("#overview-refresh").addEventListener("click", () => loadOverview(true));
+window.addEventListener("focus", scheduleOverviewUpdate);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleOverviewUpdate(); });
+setInterval(() => { if (!document.hidden) scheduleOverviewUpdate(); }, 300000);
 
 function preferences() {
   return {
@@ -186,6 +205,11 @@ async function post(path, payload, timeoutMs = 100000) {
     throw error;
   } finally {
     clearTimeout(timer);
+    if (["/api/chat/confirm", "/api/chat/action", "/api/recommend/complete", "/api/recommend/progress/confirm"].includes(path)
+        && payload.decision !== "cancel") {
+      $("#chat-sync").textContent = "正在核对 Todoist 并更新 Overview…";
+      scheduleOverviewUpdate();
+    }
   }
 }
 
@@ -424,6 +448,8 @@ function labeledField(label, control) {
 
 async function decideActions(actions, decision = "confirm") {
   if (busy) return;
+  const undated = actions.filter((action) => action.operation === "create" && !action.due_date);
+  if (decision === "confirm" && undated.length && !window.confirm(`以下事项没有日期，将显示在 All，不进入 Today / This Week：\n${undated.map((a) => a.content).join("\n")}\n\n确认按无日期创建？`)) return;
   setBusy(true); $("#chat-error").hidden = true;
   let applied = 0;
   try {
@@ -459,6 +485,7 @@ function renderChatAction(action) {
   const details = node("details", undefined, "action-detail");
   const summary = node("summary");
   summary.append(node("span", action.operation === "complete" ? "完成" : action.operation === "create" ? "新建" : "修改", "action-tag"), node("span", action.before.name, "action-name"));
+  if (action.operation === "create") summary.append(node("span", action.due_date || "无日期 · All", "action-state"));
   details.append(summary);
   const body = node("div", undefined, "action-expanded");
   body.append(node("p", action.reason));
@@ -488,6 +515,11 @@ function renderChatAction(action) {
   } else {
     const states = { applied: "✓ 已同步", cancelled: "已取消", stale: "需重新预览", uncertain: "需核对", applying: "处理中" };
     controls.append(node("span", states[action.state] || action.state, "action-state"));
+    if (action.task_id && action.state === "applied") {
+      const view = node("a", "查看 ↗", "action-state");
+      view.href = link.href; view.target = "_blank"; view.rel = "noopener noreferrer";
+      controls.append(view);
+    }
   }
   row.append(controls);
   if (action.error) row.append(node("p", action.error, "error-inline action-row-error"));

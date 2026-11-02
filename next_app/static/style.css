@@ -241,6 +241,8 @@ legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
 .chat-mode .chat-messages { flex: 1; min-height: 0; max-height: none; margin-top: 10px; padding-top: 14px; overscroll-behavior-y: contain; }
 .chat-mode #chat-status { flex-shrink: 0; margin: 5px 0; min-height: 0; }
 .chat-mode #chat-status:empty { display: none; }
+#chat-sync { margin: 3px 0; flex-shrink: 0; }
+#chat-sync:empty { display: none; }
 .chat-mode #chat-error { flex-shrink: 0; margin: 5px 0; padding: 8px 12px; }
 .chat-mode .chat-form textarea { resize: none; height: 60px; min-height: 0; }
 @media (max-height: 650px) {

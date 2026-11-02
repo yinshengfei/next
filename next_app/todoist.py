@@ -204,6 +204,8 @@ async def create_task(token: str, payload: dict) -> str:
         raise TodoistWriteError("Todoist rejected the token. Run setup to replace it.", status_code=503)
     if response.status_code == 429:
         raise TodoistWriteError("Todoist is rate-limiting requests. Try again later.", status_code=429)
+    if response.status_code >= 500:
+        raise TodoistWriteError("Todoist returned a server error; the write result is uncertain. Check Todoist before retrying.", uncertain=True)
     if response.is_error or response.is_redirect:
         raise TodoistWriteError("Todoist did not create this task. Check the fields and try again.")
     try:

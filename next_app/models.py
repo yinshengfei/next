@@ -184,6 +184,9 @@ class ChatActionDecision(StrictModel):
 
 
 class AIChatReply(StrictModel):
+    phase: Literal["answer", "clarify", "preview"] = "preview"
+    unresolved: List[str] = Field(default_factory=list, max_length=10)
+    clarification_question: Optional[str] = Field(default=None, max_length=500)
     reply: str = Field(min_length=1, max_length=6000)
     drafts: List[TaskDraft] = Field(default_factory=list, max_length=35)
     actions: List[ChatTaskAction] = Field(default_factory=list, max_length=35)

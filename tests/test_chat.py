@@ -19,6 +19,38 @@ HEADERS = {"X-Next-Local": "1"}
 PROJECTS = [{"id": "p1", "name": "Work"}]
 
 
+@pytest.mark.parametrize("phase,unresolved,question", [("clarify", [], "什么时候做？"), ("answer", [], None), ("preview", ["目标不清楚"], None), ("preview", [], "哪一个事项？")])
+def test_dialogue_gate_never_stores_operations_before_ready(monkeypatch, tmp_path, phase, unresolved, question):
+    client, path = setup_client(monkeypatch, tmp_path, {"phase": phase, "unresolved": unresolved,
+        "clarification_question": question, "reply": "先确认信息",
+        "drafts": [{"content": "Should not be proposed"}],
+        "actions": [{"operation": "complete", "task_id": "existing", "reason": "Not ready"}]})
+    with client:
+        response = client.post("/api/chat", headers=HEADERS, json={"message": "Plan my day"})
+        assert response.status_code == 200
+        history = client.get("/api/chat/history").json()
+        assert history["drafts"] == [] and history["actions"] == []
+        if question:
+            assert question in history["messages"][-1]["content"]
+
+
+def test_confirmed_undated_task_immediately_visible_in_cached_all(monkeypatch, tmp_path):
+    client, path = setup_client(monkeypatch, tmp_path, {"reply": "Preview without a date", "drafts": [{"content": "Undated task"}]})
+    async def create(token, payload):
+        assert "due_date" not in payload
+        return "new-undated"
+    monkeypatch.setattr(app_module, "create_task", create)
+    with client:
+        client.post("/api/chat", headers=HEADERS, json={"message": "Plan my day"})
+        draft = client.get("/api/chat/history").json()["drafts"][0]
+        assert client.post("/api/chat/confirm", headers=HEADERS, json={"drafts": [{"id": draft["id"], "content": draft["content"]}]}).status_code == 200
+        overview = client.get("/api/overview/cached").json()
+        all_view = next(v for v in overview["sections"] if v["key"] == "all")
+        ids = [t["id"] for a in all_view["areas"] for g in a["workstreams"] for t in g["tasks"]]
+        assert ids == ["new-undated"]
+        assert next(v for v in overview["sections"] if v["key"] == "today")["count"] == 0
+
+
 def test_chat_time_preserves_old_utc_and_new_send_time(tmp_path):
     store = ChatStore(tmp_path / "chat.db")
     with store.connect() as db:

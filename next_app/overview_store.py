@@ -75,3 +75,13 @@ class OverviewStore:
 
     def invalidate(self):
         self.set_meta("dirty", "1")
+
+    def record_created_task(self, task_id, payload):
+        """A confirmed Todoist receipt is visible even before network reconciliation."""
+        task = {"id": task_id, "name": payload["content"], "description": payload.get("description", ""),
+                "project_id": payload.get("project_id") or "", "project_name": "",
+                "due": payload.get("due_date"), "priority": payload.get("priority", 1)}
+        with self.connect() as db:
+            db.execute("INSERT INTO active(id,payload) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                       (task_id, json.dumps(task, ensure_ascii=False)))
+            db.execute("INSERT INTO meta(key,value) VALUES ('dirty','1') ON CONFLICT(key) DO UPDATE SET value='1'")

@@ -219,6 +219,13 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
             history = chat_store().recent() + [{"role": "user", "content": body.message.strip(), "created_at": sent_at}]
             result = await ai.chat(settings, key, history, tasks, project_options)
             chat_store().add_message("user", body.message.strip(), created_at=sent_at)
+            # Dialogue state is a write-proposal gate, not merely wording in a prompt.
+            if result.phase != "preview" or result.unresolved or result.clarification_question:
+                reply = result.reply
+                if result.clarification_question and result.clarification_question not in reply:
+                    reply += "\n\n" + result.clarification_question
+                chat_store().add_reply(reply, [])
+                return {"reply": reply, "phase": "clarify" if result.unresolved else result.phase, "drafts": []}
             by_id = {task.id: task for task in tasks}
             actions = []
             seen = set()
@@ -312,12 +319,12 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
                 results.append({"id": draft.id, "state": state, "message": str(exc)})
             else:
                 chat_store().finish(draft.id, "created", task_id=task_id)
+                overview_store().record_created_task(task_id, payload)
                 results.append({"id": draft.id, "state": "created", "task_id": task_id})
         created = sum(item["state"] == "created" for item in results)
         if created:
             overview_store().invalidate()
-            chat_store().add_message("assistant", "Created {} task{} in Todoist.".format(
-                created, "" if created == 1 else "s"))
+            chat_store().add_message("assistant", "已确认创建 {} 条 Todoist 待办。无日期事项在 Overview → All 查看；正在自动更新 Overview。".format(created))
         return {"results": results}
 
     @app.post("/api/chat/draft/cancel")

@@ -243,3 +243,5 @@ tests/           Offline integration and behavior tests
 ```
 
 API references: [Todoist API v1](https://developer.todoist.com/api/v1/), [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [default model](https://developers.openai.com/api/docs/models/gpt-5.4-mini).
+
+Chat uses answer, clarification, and preview phases. Unresolved decisions or a clarification question block all operation cards in both the AI adapter and the server. Missing dates are clarified instead of guessed; explicitly undated tasks appear in All. Confirmed task creation is written into the local Overview snapshot immediately. In an open Next page, write attempts automatically queue a debounced Todoist reconciliation and incremental AI layout update after the batch finishes, including uncertain results. Focus/visibility changes and a five-minute visible-page interval detect external changes. Synchronization and layout failures are shown separately from write receipts; writes are never automatically retried.
