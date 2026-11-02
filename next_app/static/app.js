@@ -389,6 +389,7 @@ let projectOptions = [];
 document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => {
   const chat = button.dataset.mode === "chat";
   const overview = button.dataset.mode === "overview";
+  document.documentElement.classList.toggle("chat-mode", chat);
   $("#overview-panel").hidden = !overview;
   $("#chat-panel").hidden = !chat;
   $("#next-panel").hidden = overview || chat;
