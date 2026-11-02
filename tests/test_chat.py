@@ -2,13 +2,17 @@ import asyncio
 import json
 import stat
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from next_app import app as app_module
+from next_app import ai
 from next_app.chat_store import ChatStore
 from next_app.config import Settings
 from next_app.models import AIChatReply, ChatRequest, ConfirmDraftsRequest, Task
 from next_app.todoist import TodoistWriteError, create_task
+from next_app.todoist import ServiceError
 
 
 HEADERS = {"X-Next-Local": "1"}
@@ -157,3 +161,13 @@ def test_long_source_plan_and_multiple_drafts_fit_chat_contract():
     assert len(AIChatReply(reply="Review", drafts=drafts).drafts) == 27
     confirmed = [{"id": "draft-{}".format(index), "content": "Task {}".format(index)} for index in range(27)]
     assert len(ConfirmDraftsRequest(drafts=confirmed).drafts) == 27
+
+
+def test_explicit_complete_list_count_must_be_preserved(monkeypatch):
+    async def incomplete(*args, **kwargs):
+        assert args[2]["expected_draft_count"] == 27
+        return AIChatReply(reply="Partial", drafts=[{"content": "Task {}".format(i)} for i in range(18)])
+
+    monkeypatch.setattr(ai, "structured_call", incomplete)
+    with pytest.raises(ServiceError, match="18 of 27"):
+        asyncio.run(ai.chat(Settings(), "test-key", [{"role": "user", "content": "完整任务档案\n27 项\n..."}], [], []))

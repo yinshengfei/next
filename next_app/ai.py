@@ -1,6 +1,7 @@
 """One bounded, structured API call per user action; no agent tools."""
 
 import json
+import re
 from datetime import datetime
 from typing import List, Type, TypeVar
 
@@ -87,12 +88,18 @@ async def chat(
     settings: Settings, key: str, history: list, tasks: List[Task], projects: list,
 ) -> AIChatReply:
     allowed_projects = {project["id"] for project in projects}
+    latest_message = history[-1]["content"] if history else ""
+    explicit_count = re.search(r"(?m)^\s*(\d{1,2})\s*项\s*$", latest_message)
+    expected_draft_count = int(explicit_count.group(1)) if explicit_count else None
+    if expected_draft_count is not None and expected_draft_count > 35:
+        expected_draft_count = None
     result = await structured_call(
         settings, key,
         {
             "local_time": datetime.now().astimezone().isoformat(timespec="minutes"),
             "response_language": settings.language,
             "conversation": history,
+            "expected_draft_count": expected_draft_count,
             "existing_tasks_sample": [
                 {"name": task.name[:300], "project": task.project_name[:150], "due": task.due}
                 for task in tasks[:40]
@@ -103,10 +110,14 @@ async def chat(
         AIChatReply,
         "You can discuss general topics and help plan work. Answer the latest user message naturally. "
         "When the user wants to capture actionable work, include up to 35 concise Todoist task "
-        "drafts. For a long source plan, identify each distinct actionable item and preserve "
-        "its stated due date and conditional status; do not collapse unrelated items or invent "
-        "deadlines. Keep descriptions brief. If a request is unclear, ask one useful question "
-        "and return no drafts. "
+        "drafts. When importing a long plan that includes an explicit complete task list, return "
+        "ONE draft for EVERY distinct item in that list, including future, conditional, optional, "
+        "and decision items. Do not select only urgent items or only immediate next steps. "
+        "Details and timelines later in the source explain the list; do not duplicate those items. "
+        "If expected_draft_count is supplied, return exactly that many drafts. Preserve stated "
+        "dates and conditional status in brief descriptions; do not invent deadlines or turn "
+        "conditional plans into unconditional commitments. If a request is unclear, ask one "
+        "useful question and return no drafts. "
         "Never say a draft has already been created; only a separate explicit confirmation can "
         "write to Todoist. Avoid duplicate drafts when a matching existing task is visible. "
         "Use only provided project IDs, or null for Inbox. Use YYYY-MM-DD only for a clear due "
@@ -117,6 +128,11 @@ async def chat(
     )
     if any(draft.project_id is not None and draft.project_id not in allowed_projects for draft in result.drafts):
         raise ServiceError("The AI selected an unknown Todoist project. Please try again.")
+    if expected_draft_count is not None and len(result.drafts) != expected_draft_count:
+        raise ServiceError(
+            "The AI returned {} of {} items in the complete list. Please try again.".format(
+                len(result.drafts), expected_draft_count)
+        )
     return result
 
 
