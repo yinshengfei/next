@@ -10,6 +10,7 @@ class StrictModel(BaseModel):
 class Preferences(StrictModel):
     minutes: int = Field(strict=True, ge=5, le=480)
     energy: Literal["low", "medium", "high"]
+    description: str = Field(default="", max_length=2000)
 
 
 class RecommendationRequest(Preferences):

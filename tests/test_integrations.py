@@ -23,6 +23,27 @@ def action(id, minutes=10):
     }
 
 
+@pytest.mark.parametrize("description,expected", [("", None), ("   ", None), ("  有点累，想整理资料  ", "有点累，想整理资料")])
+def test_recommendation_description_is_optional_and_shared_with_easier(monkeypatch, description, expected):
+    from next_app.models import SuggestedAction
+    captured = []
+    async def respond(settings, key, payload, schema, instruction, **kwargs):
+        captured.append(payload)
+        if schema is AIRecommendations:
+            return schema(recommendations=[action("1")])
+        return schema(steps=[{"action": "Open notes", "estimated_minutes": 2}], assumptions=[])
+    monkeypatch.setattr(ai, "structured_call", respond)
+    preferences = Preferences(minutes=15, energy="low", description=description)
+    task = Task(id="1", name="Organize notes")
+    run(ai.recommend(Settings(), "test", [task], preferences))
+    run(ai.make_easier(Settings(), "test", task, SuggestedAction(**action("1")), preferences))
+    for payload in captured:
+        assert payload.get("user_description") == expected
+        if expected is None:
+            assert "user_description" not in payload
+        assert payload["available_minutes"] == 15 and payload["energy"] == "low"
+
+
 def api_response(payload, status="completed"):
     return {
         "id": "resp_test", "object": "response", "created_at": 1, "status": status,

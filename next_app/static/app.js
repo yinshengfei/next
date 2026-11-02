@@ -118,6 +118,7 @@ function preferences() {
   return {
     minutes: chosenTime === "custom" ? Number($("#custom-minutes").value) : chosenTime,
     energy,
+    description: $("#recommend-description").value.trim(),
   };
 }
 
@@ -126,7 +127,7 @@ function clearResults() {
   cards = [];
   $("#results").hidden = true;
   $("#empty-state").hidden = false;
-  $("#status").textContent = "Find a new action for your updated time and energy.";
+  $("#status").textContent = "条件已更新，请重新获取推荐。";
   $("#error").hidden = true;
 }
 
@@ -148,11 +149,13 @@ $("#energy-choices").addEventListener("click", (event) => {
   clearResults();
 });
 $("#custom-minutes").addEventListener("input", clearResults);
+$("#recommend-description").addEventListener("input", clearResults);
 
 function setBusy(value, finding = false) {
   busy = value;
   document.querySelectorAll("button").forEach((button) => { button.disabled = value; });
   $("#custom-minutes").disabled = value || chosenTime !== "custom";
+  $("#recommend-description").disabled = value;
   form.setAttribute("aria-busy", String(value));
   findButton.classList.toggle("loading", value && finding);
   findButton.textContent = value && finding ? "Finding your next action…" : originalFindLabel;
