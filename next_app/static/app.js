@@ -8,6 +8,111 @@ let chosenTime = 30;
 let energy = "medium";
 let busy = false;
 let cards = [];
+let overviewLoaded = false;
+let overviewLoading = false;
+let overviewSelected = "today";
+
+function renderOverviewTask(task, finished) {
+  const row = node("article", undefined, "overview-task");
+  const link = node("a", task.name, "overview-task-link");
+  link.href = `https://app.todoist.com/app/task/${encodeURIComponent(task.id)}`;
+  link.target = "_blank"; link.rel = "noopener noreferrer";
+  row.append(link);
+  const date = task.completed_at ? `Finished ${task.completed_at.slice(0, 10)}`
+    : task.deadline ? `Deadline ${task.deadline}` : task.due ? `Due ${task.due}` : "No date";
+  row.append(node("span", date, "overview-task-date"));
+  if (task.description) row.append(node("p", task.description, "overview-recorded"));
+  else if (!finished) row.append(node("p", "Progress not recorded in Todoist", "overview-unrecorded"));
+  if (task.attention) row.append(node("p", `Note · ${task.attention}`, "overview-attention"));
+  return row;
+}
+
+function renderOverviewSection(section) {
+  const wrapper = node("section", undefined, "overview-section");
+  wrapper.dataset.overviewView = section.key;
+  wrapper.hidden = section.key !== overviewSelected;
+  const header = node("div", undefined, "overview-section-heading");
+  header.append(node("h2", section.title), node("span", `${section.count} task${section.count === 1 ? "" : "s"}`, "hint"));
+  wrapper.append(header);
+  const rules = { today: "今天到期及已逾期待办", week: "截至本周日到期的待办，包含逾期事项",
+    all: "全部未完成待办，按领域和任务组组织", finished: "过去 7 天的已完成记录" };
+  wrapper.append(node("p", rules[section.key], "hint"));
+  if (!section.areas.length) {
+    wrapper.append(node("p", section.key === "finished" ? "Nothing finished in the last seven days." : "No tasks here right now.", "hint"));
+    return wrapper;
+  }
+  section.areas.forEach((area) => {
+    const areaNode = node("div", undefined, "overview-area");
+    areaNode.append(node("h3", area.title, "overview-area-title"));
+    const grid = node("div", undefined, "overview-grid");
+    area.workstreams.forEach((group) => {
+    const card = node("article", undefined, `overview-group ${group.emphasis}`);
+    card.append(node("h4", group.title));
+    const total = group.progress.finished + group.progress.open;
+    const label = `${group.progress.finished} finished · ${group.progress.open} open`;
+    card.append(node("p", label, "overview-progress-label"));
+    const track = node("progress", undefined, "overview-progress-track");
+    track.max = Math.max(total, 1); track.value = group.progress.finished;
+    track.setAttribute("aria-label", `${group.title}: ${label}`);
+    card.append(track);
+    const list = node("div", undefined, "overview-task-list");
+    group.tasks.forEach((task) => list.append(renderOverviewTask(task, section.key === "finished")));
+    card.append(list); grid.append(card);
+    });
+    areaNode.append(grid); wrapper.append(areaNode);
+  });
+  return wrapper;
+}
+
+function showOverview(data) {
+  $("#overview-sections").replaceChildren(...data.sections.map(renderOverviewSection));
+  const buttons = data.sections.map((section) => {
+    const button = node("button", `${section.title} · ${section.count}`, "choice");
+    button.type = "button"; button.dataset.overviewKey = section.key;
+    button.setAttribute("aria-pressed", String(section.key === overviewSelected));
+    button.addEventListener("click", () => {
+      overviewSelected = section.key;
+      document.querySelectorAll("[data-overview-view]").forEach((view) => { view.hidden = view.dataset.overviewView !== section.key; });
+      document.querySelectorAll("[data-overview-key]").forEach((item) => item.setAttribute("aria-pressed", String(item.dataset.overviewKey === section.key)));
+    });
+    return button;
+  });
+  $("#overview-views").replaceChildren(...buttons);
+  const since = data.history_since ? `完成记录自 ${data.history_since}` : "完成历史尚未同步";
+  const syncTime = data.last_sync ? new Date(data.last_sync).toLocaleString() : "尚未同步";
+  $("#overview-meta").textContent = `${data.active_count} 条未完成待办 · ${since} · 进度条按待办数量计算，不代表工作量百分比 · 最后同步 ${syncTime}`;
+  if (data.layout_mode !== "ai" && data.active_count) {
+    $("#overview-error").textContent = "AI 分组尚未完成。下方保留全部待办，已通过校验的分组会在修复完成后更新。";
+    $("#overview-error").hidden = false;
+  } else { $("#overview-error").hidden = true; }
+}
+
+async function loadOverview(refresh = false) {
+  if (busy || overviewLoading) return;
+  overviewLoading = true;
+  overviewLoaded = true;
+  $("#overview-status").textContent = refresh ? "Syncing Todoist and updating workstreams…" : "Loading your overview…";
+  $("#overview-error").hidden = true;
+  $("#overview-refresh").disabled = true;
+  try {
+    const response = await fetch("/api/overview/cached");
+    if (response.ok) {
+      const cached = await response.json();
+      if (cached.available) {
+        showOverview(cached);
+        $("#overview-status").textContent = "已载入本地 Overview，正在检查更新…";
+      }
+    }
+    const data = await post("/api/overview", { refresh }, 300000);
+    showOverview(data);
+    $("#overview-status").textContent = data.sync_error ? `Showing cached tasks. Sync issue: ${data.sync_error}` : "";
+  } catch (error) {
+    $("#overview-error").textContent = error.message; $("#overview-error").hidden = false;
+    $("#overview-status").textContent = "";
+  } finally { overviewLoading = false; $("#overview-refresh").disabled = false; }
+}
+
+$("#overview-refresh").addEventListener("click", () => loadOverview(true));
 
 function preferences() {
   return {
@@ -283,13 +388,17 @@ checkSetup();
 let projectOptions = [];
 document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => {
   const chat = button.dataset.mode === "chat";
+  const overview = button.dataset.mode === "overview";
+  $("#overview-panel").hidden = !overview;
   $("#chat-panel").hidden = !chat;
-  $("#next-panel").hidden = chat;
+  $("#next-panel").hidden = overview || chat;
+  if (overview) loadOverview();
   document.querySelectorAll("[data-mode]").forEach((item) => {
     if (item === button) item.setAttribute("aria-current", "page");
     else item.removeAttribute("aria-current");
   });
 }));
+loadOverview();
 
 function renderMessage(message) {
   const article = node("article", undefined, `chat-message ${message.role}`);

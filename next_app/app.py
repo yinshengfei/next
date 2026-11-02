@@ -1,7 +1,9 @@
 import asyncio
+import hashlib
+import json
 import time
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,17 +16,22 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import ai
 from .candidates import select_candidates
 from .chat_store import ChatStore
+from .overview import build_overview
+from .overview_store import OverviewStore
 from .config import Settings, SetupError, get_secret, load_settings
-from .models import ChatRequest, ConfirmDraftsRequest, EasierRequest, ProgressConfirm, ProgressRequest, RecommendationAction, RecommendationRequest
-from .todoist import ServiceError, TodoistWriteError, create_task, fetch_projects, fetch_tasks, write_existing_task
+from .models import ChatRequest, ConfirmDraftsRequest, EasierRequest, OverviewRequest, ProgressConfirm, ProgressRequest, RecommendationAction, RecommendationRequest
+from .todoist import ServiceError, TodoistWriteError, create_task, fetch_account_started, fetch_completed_range, fetch_projects, fetch_recent_completed, fetch_tasks, write_existing_task
 
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
+def create_app(settings: Settings = None, chat_path: Path = None, overview_path: Path = None) -> FastAPI:
     settings = settings or load_settings()
+    if chat_path is None and overview_path is not None:
+        chat_path = Path(overview_path).with_name("chat.sqlite3")
     store = None
+    overview_cache = None
 
     def chat_store():
         nonlocal store
@@ -32,15 +39,23 @@ def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
             store = ChatStore(chat_path) if chat_path is not None else ChatStore()
         return store
 
+    def overview_store():
+        nonlocal overview_cache
+        if overview_cache is None:
+            cache_path = overview_path or (Path(chat_path).with_name("overview.sqlite3") if chat_path else None)
+            overview_cache = OverviewStore(cache_path)
+        return overview_cache
+
     @asynccontextmanager
     async def lifespan(app):
         # Python 3.9 binds locks at creation; create this inside the running loop.
         app.state.ai_lock = asyncio.Lock()
+        app.state.overview_lock = asyncio.Lock()
         yield
 
     app = FastAPI(title="Next", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
-    # Only the latest three task snapshots live in memory. No local task database.
+    # Recommendation snapshots expire independently of the persistent Overview cache.
     suggestions = {}
     progress_proposals = {}
 
@@ -107,6 +122,86 @@ def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
         token = await asyncio.to_thread(get_secret, "todoist")
         return {"projects": await fetch_projects(token)}
 
+    @app.post("/api/overview")
+    async def overview(body: OverviewRequest):
+        async with app.state.overview_lock:
+            cache = overview_store()
+            now = datetime.now(timezone.utc)
+            last_sync = cache.meta("last_sync")
+            stale = (cache.meta("history_complete") != "1" or cache.meta("dirty") == "1" or not last_sync
+                     or (now - datetime.fromisoformat(last_sync)).total_seconds() >= 300)
+            sync_error = None
+            if body.refresh or stale:
+                try:
+                    token = await asyncio.to_thread(get_secret, "todoist")
+                    tasks, projects = await asyncio.gather(fetch_tasks(token), fetch_projects(token))
+                    first_history_sync = cache.meta("history_complete") != "1"
+                    start = await fetch_account_started(token) if first_history_sync else (
+                        datetime.fromisoformat(last_sync) - timedelta(days=7) if last_sync else now - timedelta(days=7))
+                    completed = []
+                    cursor = start
+                    while cursor < now:
+                        end = min(cursor + timedelta(days=89), now)
+                        completed.extend(await fetch_completed_range(token, cursor, end))
+                        cursor = end
+                    project_names = {item["id"]: item["name"] for item in projects}
+                    for item in completed:
+                        item["project_name"] = project_names.get(item["project_id"], "")
+                    cache.sync([task.model_dump() for task in tasks], completed)
+                    if first_history_sync:
+                        cache.set_meta("history_since", start.date().isoformat())
+                        cache.set_meta("history_complete", "1")
+                except ServiceError as exc:
+                    sync_error = str(exc)
+            active, completed, layout = cache.snapshot()
+            if not active and not completed and sync_error:
+                raise ServiceError(sync_error)
+            records = [
+                {"task_id": "open:" + item["id"], "title": item["name"][:250],
+                 "description": item.get("description", "")[:500], "project": item.get("project_name", "")[:100],
+                 "due": item.get("due"), "deadline": item.get("deadline"), "priority": item.get("priority"),
+                 "finished": False}
+                for item in active
+            ] + [
+                {"task_id": "done:" + item["id"], "title": item["name"][:250],
+                 "description": item.get("description", "")[:500], "project": item.get("project_name", "")[:100],
+                 "completed_at": item.get("completed_at"), "finished": True}
+                for item in completed
+            ]
+            records.sort(key=lambda item: item["task_id"])
+            user_context = "\n\n".join(message["content"] for message in chat_store().recent(40)
+                                        if message["role"] == "user")
+            signature = hashlib.sha256(json.dumps({"version": 5, "model": settings.overview_model or settings.model,
+                                                   "records": records}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+            layout_mode = "ai"
+            layout_error = None
+            if records and signature != cache.meta("layout_signature") and not app.state.ai_lock.locked():
+                try:
+                    async with app.state.ai_lock:
+                        key = await asyncio.to_thread(get_secret, settings.ai_key_account)
+                        placements = await ai.layout_overview(settings, key, records, previous_layout=layout,
+                                                             planning_context=user_context)
+                    cache.save_layout(placements)
+                    cache.set_meta("layout_signature", signature)
+                    layout = {item["task_id"]: item for item in placements}
+                except ServiceError as exc:
+                    layout_mode = "fallback"
+                    layout_error = str(exc)
+            elif records and signature != cache.meta("layout_signature"):
+                layout_mode = "fallback"
+            result = build_overview(active, completed, layout, coverage_since=cache.meta("history_since"))
+            return {**result, "last_sync": cache.meta("last_sync"), "sync_error": sync_error,
+                    "layout_mode": layout_mode, "layout_error": layout_error}
+
+    @app.get("/api/overview/cached")
+    async def cached_overview():
+        cache = overview_store()
+        active, completed, layout = cache.snapshot()
+        result = build_overview(active, completed, layout, coverage_since=cache.meta("history_since"))
+        return {**result, "available": bool(cache.meta("last_sync") or active or completed),
+                "last_sync": cache.meta("last_sync"), "layout_mode": "ai" if layout else "fallback",
+                "sync_error": None}
+
     @app.post("/api/chat")
     async def chat_message(body: ChatRequest):
         if app.state.ai_lock.locked():
@@ -160,6 +255,7 @@ def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
                 results.append({"id": draft.id, "state": "created", "task_id": task_id})
         created = sum(item["state"] == "created" for item in results)
         if created:
+            overview_store().invalidate()
             chat_store().add_message("assistant", "Created {} task{} in Todoist.".format(
                 created, "" if created == 1 else "s"))
         return {"results": results}
@@ -221,6 +317,7 @@ def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
             raise ServiceError("This task is no longer active. Refresh recommendations.", 409)
         suggestions.pop(body.recommendation_id, None)
         await write_existing_task(token, task.id, complete=True)
+        overview_store().invalidate()
         return {"completed": True, "task_id": task.id}
 
     @app.post("/api/recommend/progress")
@@ -275,8 +372,10 @@ def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
             if body.complete:
                 await write_existing_task(token, task.id, complete=True)
         except TodoistWriteError as exc:
+            overview_store().invalidate()
             raise ServiceError("Some progress changes may already be saved in Todoist. Check the task "
                                "and any new tasks before trying again. " + str(exc), exc.status_code) from None
+        overview_store().invalidate()
         return {"updated": bool(changes), "completed": body.complete, "created_task_ids": created}
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

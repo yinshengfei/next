@@ -1,6 +1,7 @@
 """Todoist task reads and reviewed writes."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Any, List
 
 import httpx
@@ -117,6 +118,72 @@ async def fetch_projects(token: str) -> List[dict]:
          "is_inbox_project": bool(item.get("inbox_project"))}
         for item in projects if "id" in item
     ]
+
+
+async def fetch_completed_range(token: str, since: datetime, until: datetime) -> List[dict]:
+    """Completed tasks in a bounded range of at most 90 days, every page."""
+    if until <= since or until - since > timedelta(days=90):
+        raise ValueError("Completed task range must be at most 90 days.")
+    items = []
+    cursor = None
+    seen = set()
+    async with httpx.AsyncClient(base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+                                 timeout=20, follow_redirects=False) as client:
+        for _ in range(100):
+            params = {"since": since.isoformat(), "until": until.isoformat(), "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            try:
+                response = await client.get("tasks/completed/by_completion_date", params=params)
+            except (httpx.TimeoutException, httpx.HTTPError):
+                raise ServiceError("Todoist could not load recently completed tasks. Please try again.") from None
+            if response.status_code in (401, 403):
+                raise ServiceError("Todoist rejected the token. Run setup to replace it.", 503)
+            if response.status_code == 429:
+                raise ServiceError("Todoist is rate-limiting requests. Try again later.", 429)
+            if response.is_error or response.is_redirect:
+                raise ServiceError("Todoist could not load recently completed tasks. Please try again.")
+            data = response.json()
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+                raise ServiceError("Todoist returned an unexpected completed-task response.")
+            items.extend(data["items"])
+            cursor = data.get("next_cursor")
+            if not cursor:
+                break
+            if not isinstance(cursor, str) or cursor in seen:
+                raise ServiceError("Todoist completed-task pagination did not finish safely.")
+            seen.add(cursor)
+        else:
+            raise ServiceError("Too many completed-task pages to load safely.")
+    result = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id") or not item.get("completed_at"):
+            raise ServiceError("Todoist returned an unexpected completed-task format.")
+        result.append({"id": str(item["id"]), "name": str(item.get("content", "")),
+                       "description": str(item.get("description") or ""),
+                       "project_id": str(item.get("project_id") or ""),
+                       "completed_at": str(item["completed_at"])})
+    return result
+
+
+async def fetch_recent_completed(token: str, now: datetime = None) -> List[dict]:
+    now = now or datetime.now(timezone.utc)
+    return await fetch_completed_range(token, now - timedelta(days=7), now)
+
+
+async def fetch_account_started(token: str) -> datetime:
+    """Read only the history boundary; never retain the user response (it can contain tokens)."""
+    async with httpx.AsyncClient(base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+                                 timeout=20, follow_redirects=False) as client:
+        try:
+            response = await client.get("user")
+            response.raise_for_status()
+            joined = datetime.fromisoformat(response.json()["joined_at"].replace("Z", "+00:00"))
+            if joined.tzinfo is None:
+                raise ValueError
+            return joined
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+            raise ServiceError("Could not determine the start of your Todoist history. Please try again.") from None
 
 
 async def create_task(token: str, payload: dict) -> str:

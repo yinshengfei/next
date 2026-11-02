@@ -8,6 +8,12 @@ See [NOTICE](NOTICE), [third-party licenses](THIRD_PARTY_NOTICES.md), and
 
 A local assistant for chatting, capturing Todoist tasks, and choosing what to work on now.
 
+**Overview** organizes work as areas → workstreams → original Todoist tasks. AI proposes the hierarchy, display order, emphasis, and grounded attention notes. Next owns the four views: **Today** includes overdue and today-due work; **This Week** includes dates through Sunday and overdue work; **All** includes every active task, including undated tasks; **Finished** shows completion records from the last seven days. A due date or deadline can place a task in a dated view.
+
+The overview opens from an owner-only local SQLite cache at `~/Library/Application Support/Next/overview.sqlite3`, then checks for updates. Todoist snapshots are reused for five minutes or until a Next write invalidates them. **Refresh Todoist** forces a sync. Initial history synchronization reads back to the account creation date in bounded date windows; later updates retain historical completions and read changes since the previous sync with overlap. Group progress bars count completed versus open Todoist items; they are not estimates of time or effort completed.
+
+AI starts with the cached hierarchy and retains unchanged task memberships. Code verifies all task IDs and referenced workstreams. Missing, duplicate, or invalid placements trigger up to three targeted repairs containing only unresolved records, validation feedback, and accepted placements. A semantic review can correct specific misgrouped tasks without replacing the accepted layout. Unavailable AI does not hide tasks: the previous layout remains, with unorganized tasks clearly labeled. Opening an unchanged overview reuses its AI layout without another AI call. Set the optional `overview_model` in `config.json` to a model available on your configured provider for hierarchy planning; `null` uses the ordinary `model`. An Overview update can make multiple bounded AI requests, unlike the single-request chat/recommendation actions.
+
 In **Chat & create tasks**, talk to Next about anything or describe work you want to capture. It can suggest up to 35 Todoist task drafts at a time. Edit the title, description, existing project, due date, and priority; select the drafts you want; then click **Create selected tasks in Todoist**. Chatting and drafting alone never create tasks. A failed or interrupted create request is not automatically retried.
 
 In **Find my next action**, choose your available time and energy. Next reads Todoist, shortlists at most 18 tasks locally, and asks AI for one next action and two alternatives. **Make It Easier** turns a recommendation into 1–3 smaller steps. Use **Mark task complete** on a recommended task when the whole task is done. Or describe partial progress or newly discovered work below that task: Next previews an edit to the original task and up to five new tasks. Review and confirm before those changes reach Todoist.
@@ -128,7 +134,7 @@ The Credits [quickstart](https://credits.openai-next.com/guide/quickstart) docum
 
 ## How the shortlist works
 
-The backend retrieves the active tasks and project names using all Todoist result pages. It does not send the full task list to AI or store a local task database.
+Recommendations retrieve active tasks and project names using all Todoist result pages, then send only the shortlist to AI. Overview maintains a separate local task/history cache and sends the task information needed to organize its complete hierarchy.
 
 It chooses up to **18 distinct candidates**, using three simple buckets:
 
@@ -157,6 +163,7 @@ Its defaults are:
   "provider": "openai",
   "base_url": "https://api.openai.com/v1",
   "model": "gpt-5.4-mini",
+  "overview_model": null,
   "port": 8765,
   "language": "English",
   "important_projects": []
@@ -173,12 +180,12 @@ Next uses the Mac's local date and timezone. A Todoist due date and hard deadlin
 
 ## Privacy and request costs
 
-- **Local does not mean offline.** Todoist receives read requests and, only after you confirm drafts, task-create requests. The configured AI provider receives selected task data for recommendations and chat context. With a custom gateway, requests are subject to its and the upstream model provider's policies.
+- **Local does not mean offline.** Todoist receives reads and explicitly requested task creation, completion, and progress updates. The configured AI provider receives task and conversation data needed for the selected feature. With a custom gateway, requests are subject to its and the upstream model provider's policies.
 - At most 18 candidates are sent, containing task IDs, titles, project names, dates, priorities, limited labels, existing duration if provided, a parent title if available, and descriptions truncated to 700 characters. Truncation is flagged. Comments, attachments, completed tasks, and unrelated account data are not read.
 - Make It Easier sends only the selected task snapshot and its recommendation, plus time and energy.
 - Chat sends up to 40 existing task titles with project names and due dates, up to 100 project names and IDs, and the latest 12 chat messages. It works even when Todoist has no tasks. Chat accepts messages up to 12,000 characters and uses a 12,000-token output limit; recommendations use 2,200. Each click makes one AI request with no automatic retries. Exact cost depends on input size, model, and usage.
 - `store=false` is sent with every AI request. Official OpenAI documents this as disabling response storage for later retrieval; third-party gateway handling must be confirmed with that provider. This is **not** a promise of zero provider-side retention. See [OpenAI's API documentation](https://developers.openai.com/api/reference/resources/responses/methods/create).
-- Only the latest recommendations and task snapshots remain in process memory, becoming unavailable to Make It Easier after 30 minutes or when replaced. Chat messages and task drafts stay in the local SQLite file until cleared. No credentials are stored there.
+- Recommendation snapshots remain in process memory for up to 30 minutes. Chat messages, task drafts, and Overview's task/history/layout cache persist in local SQLite files. No credentials are stored in those files.
 - The server binds only to `127.0.0.1`. Same-origin request checks, a required custom request header, and a restrictive content security policy provide basic browser protection without accounts or authentication infrastructure.
 - Model and Todoist text is inserted as text, not HTML. Credentials and upstream error bodies are not included in responses or request logs. Keychain access failure never falls back to plaintext storage.
 - Keychain protects normal credential storage; it does not isolate this application from malicious software already controlling your Mac account. A Todoist personal token can authorize more than the task creation Next performs.

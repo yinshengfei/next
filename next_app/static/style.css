@@ -158,3 +158,30 @@ legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
 .progress-form label, .progress-confirm-form label { display: grid; gap: .3rem; }
 .progress-new-task { display: grid; gap: .5rem; padding: .7rem; border: 1px solid var(--line, #ddd); border-radius: .5rem; }
 .complete-button, .progress-button { justify-self: start; }
+.overview-panel { padding-top: 32px; }
+.overview-views { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.overview-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.overview-heading h1 { margin: 8px 0; }
+.overview-section { margin: 32px 0 38px; }
+.overview-section-heading { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.overview-section-heading h2 { font-size: 20px; letter-spacing: -.5px; margin: 0 0 11px; }
+.overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.overview-area { margin: 18px 0 26px; }
+.overview-area-title { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); margin: 0 0 12px; }
+.overview-group { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; overflow-wrap: anywhere; }
+.overview-group.focus { grid-column: span 2; border-left: 4px solid var(--accent); padding: 21px; }
+.overview-group.quiet { background: #f5f5f0; }
+.overview-group h4 { font-size: 17px; margin: 0 0 7px; font-weight: 600; }
+.overview-progress-label { margin: 0 0 8px; color: var(--muted); font-size: 11px; }
+.overview-progress-track { appearance: none; width: 100%; height: 5px; border: 0; border-radius: 6px; background: #e5e8df; overflow: hidden; }
+.overview-progress-track::-webkit-progress-bar { background: #e5e8df; }
+.overview-progress-track::-webkit-progress-value { background: #6f9270; border-radius: 6px; }
+.overview-progress-track::-moz-progress-bar { background: #6f9270; }
+.overview-task-list { margin-top: 13px; display: grid; gap: 12px; }
+.overview-task { padding-top: 11px; border-top: 1px solid var(--line); display: grid; gap: 4px; }
+.overview-task-link { color: var(--ink); font-size: 13px; font-weight: 550; text-decoration: none; }
+.overview-task-link:hover { text-decoration: underline; }
+.overview-task-date, .overview-unrecorded { font-size: 11px; color: var(--muted); margin: 0; }
+.overview-recorded { font-size: 11px; color: #626b60; white-space: pre-wrap; margin: 2px 0; line-height: 1.5; }
+.overview-attention { font-size: 11px; color: #81603d; background: #f8f1e5; border-radius: 5px; padding: 6px 8px; margin: 3px 0 0; line-height: 1.4; }
+@media (max-width: 650px) { .overview-grid { grid-template-columns: 1fr; } .overview-group.focus { grid-column: span 1; } .overview-heading { flex-wrap: wrap; } }

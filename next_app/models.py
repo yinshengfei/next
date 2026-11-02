@@ -16,6 +16,10 @@ class RecommendationRequest(Preferences):
     exclude_ids: List[str] = Field(default_factory=list, max_length=3)
 
 
+class OverviewRequest(StrictModel):
+    refresh: bool = False
+
+
 class Task(BaseModel):
     id: str
     name: str
@@ -59,6 +63,54 @@ class SuggestedAction(StrictModel):
 
 class AIRecommendations(StrictModel):
     recommendations: List[SuggestedAction] = Field(min_length=1, max_length=3)
+
+
+class OverviewWorkstream(StrictModel):
+    stream_id: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=120)
+    order: int = Field(strict=True, ge=0, le=1000)
+
+
+class OverviewArea(StrictModel):
+    area_id: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=120)
+    order: int = Field(strict=True, ge=0, le=1000)
+    workstreams: List[OverviewWorkstream] = Field(min_length=1, max_length=20)
+
+
+class OverviewTaxonomy(StrictModel):
+    areas: List[OverviewArea] = Field(min_length=1, max_length=12)
+
+
+class OverviewPlacement(StrictModel):
+    task_id: str = Field(min_length=1, max_length=100)
+    stream_id: str = Field(min_length=1, max_length=80)
+    order: int = Field(strict=True, ge=0, le=10000)
+    emphasis: Literal["focus", "standard", "quiet"]
+    attention: Optional[str] = Field(default=None, max_length=240)
+
+
+class OverviewLayout(StrictModel):
+    items: List[OverviewPlacement] = Field(max_length=15)
+
+
+class OverviewNewWorkstream(StrictModel):
+    area_id: str = Field(min_length=1, max_length=80)
+    area_title: str = Field(min_length=1, max_length=120)
+    stream_id: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=120)
+    order: int = Field(strict=True, ge=0, le=1000)
+
+
+class OverviewMove(StrictModel):
+    task_id: str = Field(min_length=1, max_length=100)
+    stream_id: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class OverviewAudit(StrictModel):
+    new_workstreams: List[OverviewNewWorkstream] = Field(default_factory=list, max_length=20)
+    moves: List[OverviewMove] = Field(default_factory=list, max_length=100)
 
 
 class EasierStep(StrictModel):

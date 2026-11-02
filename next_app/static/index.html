@@ -18,11 +18,25 @@
     </header>
 
     <nav class="mode-tabs" aria-label="Next sections">
-      <button type="button" class="mode-tab" data-mode="chat" aria-current="page">Chat &amp; create tasks</button>
+      <button type="button" class="mode-tab" data-mode="overview" aria-current="page">Overview</button>
+      <button type="button" class="mode-tab" data-mode="chat">Chat &amp; create tasks</button>
       <button type="button" class="mode-tab" data-mode="next">Find my next action</button>
     </nav>
 
-    <section id="chat-panel" class="chat-panel" aria-labelledby="chat-title">
+    <section id="overview-panel" class="overview-panel" aria-labelledby="overview-title">
+      <div class="overview-heading">
+        <div><p class="eyebrow">YOUR WORK AT A GLANCE</p><h1 id="overview-title">Overview</h1>
+          <p class="subtitle">Workstreams arranged by AI. Every Todoist task is accounted for by Next.</p></div>
+        <button type="button" id="overview-refresh" class="text-button">Refresh Todoist</button>
+      </div>
+      <p id="overview-status" class="status" role="status"></p>
+      <div id="overview-error" class="error" role="alert" hidden></div>
+      <nav id="overview-views" class="overview-views" aria-label="Overview views"></nav>
+      <div id="overview-sections"></div>
+      <p id="overview-meta" class="hint"></p>
+    </section>
+
+    <section id="chat-panel" class="chat-panel" aria-labelledby="chat-title" hidden>
       <div class="chat-heading">
         <div><p class="eyebrow">TALK IT THROUGH</p><h1 id="chat-title">What’s on your mind?</h1></div>
         <button type="button" id="clear-chat" class="text-button">Clear chat history</button>
