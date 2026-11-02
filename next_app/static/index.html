@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="A small local assistant to help you choose what to work on next.">
-  <title>Next — What should I do now?</title>
+  <meta name="description" content="Chat, capture tasks in Todoist, and choose what to do next.">
+  <title>Next — Chat and tasks</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
@@ -16,6 +16,34 @@
       <a class="brand" href="/" aria-label="Next home"><span class="brand-mark" aria-hidden="true">↗</span> next<span class="brand-period">.</span></a>
       <span class="connection" id="connection">On your Mac</span>
     </header>
+
+    <nav class="mode-tabs" aria-label="Next sections">
+      <button type="button" class="mode-tab" data-mode="chat" aria-current="page">Chat &amp; create tasks</button>
+      <button type="button" class="mode-tab" data-mode="next">Find my next action</button>
+    </nav>
+
+    <section id="chat-panel" class="chat-panel" aria-labelledby="chat-title">
+      <div class="chat-heading">
+        <div><p class="eyebrow">TALK IT THROUGH</p><h1 id="chat-title">What’s on your mind?</h1></div>
+        <button type="button" id="clear-chat" class="text-button">Clear chat history</button>
+      </div>
+      <p class="subtitle">Ask anything, or describe what you need to do. I’ll prepare Todoist tasks for your review.</p>
+      <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <p id="chat-status" class="status" role="status" aria-live="polite"></p>
+      <div id="chat-error" class="error" role="alert" hidden></div>
+      <form id="chat-form" class="chat-form">
+        <label for="chat-input">Message</label>
+        <textarea id="chat-input" rows="3" maxlength="4000" placeholder="For example: Help me plan tomorrow and add the concrete steps to Todoist." required></textarea>
+        <button id="chat-send" class="primary-button" type="submit">Send <span aria-hidden="true">→</span></button>
+      </form>
+      <section id="draft-section" class="draft-section" aria-labelledby="draft-title" hidden>
+        <div class="section-heading"><h2 id="draft-title">Review before creating</h2><span class="hint">Nothing is sent to Todoist until you confirm.</span></div>
+        <div id="draft-list"></div>
+        <button id="create-drafts" type="button" class="primary-button">Create selected tasks in Todoist</button>
+      </section>
+    </section>
+
+    <div id="next-panel" hidden>
 
     <section class="intro" aria-labelledby="page-title">
       <p class="eyebrow">LESS DECIDING. MORE DOING.</p>
@@ -80,8 +108,9 @@
         <p id="candidate-note" class="hint"></p>
       </div>
     </section>
+    </div>
 
-    <footer class="page-footer"><span>Small steps count.</span><span>Read-only · Your tasks stay in Todoist</span></footer>
+    <footer class="page-footer"><span>Small steps count.</span><span>Chat is saved on this Mac · Task creation requires your confirmation</span></footer>
   </main>
 
   <template id="recommendation-template">

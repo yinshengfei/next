@@ -6,11 +6,13 @@ license](COMMERCIAL_LICENSE.md). This is not an OSI-approved open-source license
 See [NOTICE](NOTICE), [third-party licenses](THIRD_PARTY_NOTICES.md), and
 [contribution requirements](CONTRIBUTING.md).
 
-A small, local, **read-only** assistant for choosing what to work on now.
+A local assistant for chatting, capturing Todoist tasks, and choosing what to work on now.
 
-Choose your available time and energy. Next reads Todoist, shortlists at most 18 tasks locally, and asks AI for one next action and two alternatives. **Make It Easier** turns a recommendation into 1–3 smaller steps.
+In **Chat & create tasks**, talk to Next about anything or describe work you want to capture. It can suggest up to six Todoist task drafts at a time. Edit the title, description, existing project, due date, and priority; select the drafts you want; then click **Create selected tasks in Todoist**. Chatting and drafting alone never create tasks. A failed or interrupted create request is not automatically retried.
 
-There is no task completion, task editing, progress tracking, calendar integration, database, login flow, public deployment, or background AI activity in this version.
+In **Find my next action**, choose your available time and energy. Next reads Todoist, shortlists at most 18 tasks locally, and asks AI for one next action and two alternatives. **Make It Easier** turns a recommendation into 1–3 smaller steps.
+
+Chat history and drafts are saved locally in `~/Library/Application Support/Next/chat.sqlite3` with owner-only permissions. **Clear chat history** removes them from this Mac, but leaves already-created Todoist tasks untouched. The latest 12 messages are used as AI context. There is no task completion, editing of existing Todoist tasks, calendar integration, public deployment, or background AI activity.
 
 ## Run on your Mac
 
@@ -171,15 +173,15 @@ Next uses the Mac's local date and timezone. A Todoist due date and hard deadlin
 
 ## Privacy and request costs
 
-- **Local does not mean offline.** Todoist receives read requests; the configured AI provider receives selected task data to produce recommendations. With OpenAI Next Credits, requests go to its gateway and are subject to its and the upstream model provider's policies.
+- **Local does not mean offline.** Todoist receives read requests and, only after you confirm drafts, task-create requests. The configured AI provider receives selected task data for recommendations and chat context. With a custom gateway, requests are subject to its and the upstream model provider's policies.
 - At most 18 candidates are sent, containing task IDs, titles, project names, dates, priorities, limited labels, existing duration if provided, a parent title if available, and descriptions truncated to 700 characters. Truncation is flagged. Comments, attachments, completed tasks, and unrelated account data are not read.
 - Make It Easier sends only the selected task snapshot and its recommendation, plus time and energy.
-- Each click makes one AI request, with a 2,200-token output limit and no automatic retries. No AI request is made for an empty task list. Exact cost depends on input size, model, and usage.
+- Chat sends up to 40 existing task titles with project names and due dates, up to 100 project names and IDs, and the latest 12 chat messages. It works even when Todoist has no tasks. Chat uses a 3,500-token output limit; recommendations use 2,200. Each click makes one AI request with no automatic retries. Exact cost depends on input size, model, and usage.
 - `store=false` is sent with every AI request. Official OpenAI documents this as disabling response storage for later retrieval; third-party gateway handling must be confirmed with that provider. This is **not** a promise of zero provider-side retention. See [OpenAI's API documentation](https://developers.openai.com/api/reference/resources/responses/methods/create).
-- Only the latest recommendations and task snapshots remain in process memory, becoming unavailable to Make It Easier after 30 minutes or when replaced. They are not saved to disk. Reloading the browser clears its displayed results.
+- Only the latest recommendations and task snapshots remain in process memory, becoming unavailable to Make It Easier after 30 minutes or when replaced. Chat messages and task drafts stay in the local SQLite file until cleared. No credentials are stored there.
 - The server binds only to `127.0.0.1`. Same-origin request checks, a required custom request header, and a restrictive content security policy provide basic browser protection without accounts or authentication infrastructure.
 - Model and Todoist text is inserted as text, not HTML. Credentials and upstream error bodies are not included in responses or request logs. Keychain access failure never falls back to plaintext storage.
-- Keychain protects normal credential storage; it does not isolate this application from malicious software already controlling your Mac account. A Todoist personal token can have broader permissions than the read operations this app uses.
+- Keychain protects normal credential storage; it does not isolate this application from malicious software already controlling your Mac account. A Todoist personal token can authorize more than the task creation Next performs.
 
 ## Troubleshooting
 
@@ -207,11 +209,11 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Tests use simulated HTTP responses with the actual Todoist client and OpenAI SDK, not your credentials. They cover pagination, candidate bounds and project variety, task identity, time limits, breakdowns, read-only behavior, missing credentials, upstream errors, local request checks, file permissions, custom endpoint/model routing, endpoint-specific credentials, redirect protection, old configuration compatibility, and the synthetic provider check.
+Tests use simulated HTTP responses with the actual Todoist client and OpenAI SDK, not your credentials. They cover pagination, candidate bounds and project variety, task identity, time limits, breakdowns, missing credentials, upstream errors, local request checks, file permissions, custom endpoint/model routing, redirect protection, chat persistence, confirmation-only task creation, and duplicate/ambiguous create protection.
 
-The initial browser flow was also checked with fake task and AI responses. The provider change leaves the interface intact. **Your actual Todoist account, Credits key/model access, strict JSON-schema compatibility, live latency, and recommendation quality remain to be verified after you run setup.**
+The chat flow can be checked with synthetic AI input without creating real Todoist tasks. Before relying on the new task creation flow, review each draft in the UI and confirm only the tasks you actually want.
 
-For your first real check, try 15 minutes / Low, then 60 minutes / High. Check whether the chosen tasks are useful, the first steps are specific, and Make It Easier reduces effort. We should refine that experience before adding any write operations or other features.
+For the recommendation flow, try 15 minutes / Low, then 60 minutes / High. Check whether the chosen tasks are useful, the first steps are specific, and Make It Easier reduces effort.
 
 ## Small code map
 
@@ -219,10 +221,11 @@ For your first real check, try 15 minutes / Low, then 60 minutes / High. Check w
 next_app/
   __main__.py    Terminal setup and launch commands
   config.py      Preferences and macOS Keychain
-  todoist.py     Paginated read-only task/project retrieval
+  todoist.py     Paginated retrieval and confirmed task creation
   candidates.py  Three-bucket shortlist, maximum 18 tasks
-  ai.py          Structured recommendations and smaller steps
-  app.py         Local routes and in-memory recommendation snapshots
+  ai.py          Structured chat, recommendations, and smaller steps
+  chat_store.py  Local chat history and task draft states
+  app.py         Local routes, confirmation gate, recommendation snapshots
   models.py      Input/output validation
   static/        Single-page interface, no build step
 tests/           Offline integration and behavior tests

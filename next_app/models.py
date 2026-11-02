@@ -75,3 +75,33 @@ class EasierRequest(Preferences):
     # The server retrieves the actual recommendation; no model output is trusted
     # as the identity of a task or as permission to perform an action.
     recommendation_id: str = Field(min_length=1, max_length=100)
+
+
+class TaskDraft(StrictModel):
+    content: str = Field(min_length=1, max_length=500)
+    description: str = Field(default="", max_length=3000)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    priority: int = Field(default=4, strict=True, ge=1, le=4)  # API v1: 1 is highest.
+
+
+class AIChatReply(StrictModel):
+    reply: str = Field(min_length=1, max_length=6000)
+    drafts: List[TaskDraft] = Field(default_factory=list, max_length=6)
+
+
+class ChatRequest(StrictModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class ConfirmedDraft(StrictModel):
+    id: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=500)
+    description: str = Field(default="", max_length=3000)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    priority: int = Field(default=4, strict=True, ge=1, le=4)
+
+
+class ConfirmDraftsRequest(StrictModel):
+    drafts: List[ConfirmedDraft] = Field(min_length=1, max_length=6)

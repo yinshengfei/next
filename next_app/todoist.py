@@ -17,6 +17,12 @@ class ServiceError(Exception):
         self.status_code = status_code
 
 
+class TodoistWriteError(ServiceError):
+    def __init__(self, message: str, uncertain: bool = False, status_code: int = 502):
+        super().__init__(message, status_code)
+        self.uncertain = uncertain
+
+
 async def read_pages(client: httpx.AsyncClient, resource: str) -> List[dict]:
     results: List[dict] = []
     cursor = None
@@ -90,7 +96,8 @@ async def fetch_tasks(token: str) -> List[Task]:
                 id=str(item["id"]), name=item["content"],
                 description=item.get("description") or "", project_id=project_id,
                 project_name=project.get("name", ""), favorite_project=bool(project.get("is_favorite")),
-                priority=max(1, min(4, int(item.get("priority", 1)))),
+                # API v1 uses 1 for P1; Next's shortlist uses 4 for P1.
+                priority=max(1, min(4, 5 - int(item.get("priority", 4)))),
                 due=date_value(item.get("due")), deadline=date_value(item.get("deadline")),
                 labels=item.get("labels") or [], duration_minutes=duration_minutes,
                 parent_id=parent_id, parent_name=names.get(parent_id),
@@ -98,3 +105,47 @@ async def fetch_tasks(token: str) -> List[Task]:
     except (KeyError, ValueError, TypeError, AttributeError):
         raise ServiceError("Todoist returned an unexpected task format. Please try again.") from None
     return tasks
+
+
+async def fetch_projects(token: str) -> List[dict]:
+    async with httpx.AsyncClient(
+        base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+        timeout=20, follow_redirects=False,
+    ) as client:
+        projects = await read_pages(client, "projects")
+    return [
+        {"id": str(item["id"]), "name": str(item.get("name", ""))[:150],
+         "is_inbox_project": bool(item.get("inbox_project"))}
+        for item in projects if "id" in item
+    ]
+
+
+async def create_task(token: str, payload: dict) -> str:
+    """Create one reviewed task; ambiguous failures must not be retried automatically."""
+    async with httpx.AsyncClient(
+        base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+        timeout=20, follow_redirects=False,
+    ) as client:
+        try:
+            response = await client.post("tasks", json=payload)
+        except (httpx.TimeoutException, httpx.HTTPError):
+            raise TodoistWriteError(
+                "Could not confirm whether Todoist created this task. Check Todoist before trying again.",
+                uncertain=True,
+            ) from None
+    if response.status_code in (401, 403):
+        raise TodoistWriteError("Todoist rejected the token. Run setup to replace it.", status_code=503)
+    if response.status_code == 429:
+        raise TodoistWriteError("Todoist is rate-limiting requests. Try again later.", status_code=429)
+    if response.is_error or response.is_redirect:
+        raise TodoistWriteError("Todoist did not create this task. Check the fields and try again.")
+    try:
+        task_id = response.json()["id"]
+        if not isinstance(task_id, str) or not task_id:
+            raise ValueError
+        return task_id
+    except (ValueError, TypeError, KeyError):
+        raise TodoistWriteError(
+            "Todoist responded, but the created task could not be confirmed. Check Todoist before trying again.",
+            uncertain=True,
+        ) from None

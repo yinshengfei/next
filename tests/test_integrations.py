@@ -51,7 +51,7 @@ def upstream(monkeypatch):
             if request.url.params.get("cursor") == "page2":
                 return httpx.Response(200, json={"results": [{"id": "3", "content": "Academic CV", "project_id": "p", "parent_id": "1"}], "next_cursor": None})
             return httpx.Response(200, json={"results": [
-                {"id": "1", "content": "Research plan", "project_id": "p", "priority": 4, "due": {"date": "2026-10-26"}, "deadline": {"date": "2026-10-28"}},
+                {"id": "1", "content": "Research plan", "project_id": "p", "priority": 1, "due": {"date": "2026-10-26"}, "deadline": {"date": "2026-10-28"}},
                 {"id": "2", "content": "Read paper", "project_id": "p", "duration": {"amount": 1, "unit": "day"}},
             ], "next_cursor": "page2"})
         assert request.url.host == state.get("ai_host", "api.openai.com")

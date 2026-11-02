@@ -1,6 +1,7 @@
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,16 +13,24 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import ai
 from .candidates import select_candidates
+from .chat_store import ChatStore
 from .config import Settings, SetupError, get_secret, load_settings
-from .models import EasierRequest, RecommendationRequest
-from .todoist import ServiceError, fetch_tasks
+from .models import ChatRequest, ConfirmDraftsRequest, EasierRequest, RecommendationRequest
+from .todoist import ServiceError, TodoistWriteError, create_task, fetch_projects, fetch_tasks
 
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_app(settings: Settings = None) -> FastAPI:
+def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
     settings = settings or load_settings()
+    store = None
+
+    def chat_store():
+        nonlocal store
+        if store is None:
+            store = ChatStore(chat_path) if chat_path is not None else ChatStore()
+        return store
 
     @asynccontextmanager
     async def lifespan(app):
@@ -67,7 +76,7 @@ def create_app(settings: Settings = None) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def input_error(request: Request, exc: RequestValidationError):
         # Do not echo request data in errors or log upstream error bodies.
-        return JSONResponse({"detail": "Choose 5–480 whole minutes and a valid energy level."}, status_code=422)
+        return JSONResponse({"detail": "Please check the submitted fields and try again."}, status_code=422)
 
     @app.get("/")
     async def index():
@@ -81,6 +90,78 @@ def create_app(settings: Settings = None) -> FastAPI:
         except SetupError as exc:
             return {"configured": False, "message": str(exc)}
         return {"configured": True, "message": "Ready"}
+
+    @app.get("/api/chat/history")
+    async def chat_history():
+        return chat_store().history()
+
+    @app.get("/api/projects")
+    async def projects():
+        token = await asyncio.to_thread(get_secret, "todoist")
+        return {"projects": await fetch_projects(token)}
+
+    @app.post("/api/chat")
+    async def chat_message(body: ChatRequest):
+        if app.state.ai_lock.locked():
+            raise ServiceError("Another AI request is running. Please wait.", 429)
+        async with app.state.ai_lock:
+            token = await asyncio.to_thread(get_secret, "todoist")
+            key = await asyncio.to_thread(get_secret, settings.ai_key_account)
+            tasks, project_options = await asyncio.gather(
+                fetch_tasks(token), fetch_projects(token),
+            )
+            history = chat_store().recent() + [{"role": "user", "content": body.message.strip()}]
+            result = await ai.chat(settings, key, history, tasks, project_options)
+            chat_store().add_message("user", body.message.strip())
+            saved = chat_store().add_reply(result.reply, result.drafts)
+            return {"reply": result.reply, "drafts": saved}
+
+    @app.post("/api/chat/confirm")
+    async def confirm_drafts(body: ConfirmDraftsRequest):
+        if app.state.ai_lock.locked():
+            raise ServiceError("Another AI request is running. Please wait.", 429)
+        ids = [draft.id for draft in body.drafts]
+        if len(ids) != len(set(ids)):
+            raise ServiceError("Select each draft only once.", 422)
+        token = await asyncio.to_thread(get_secret, "todoist")
+        allowed_projects = {item["id"] for item in await fetch_projects(token)}
+        for draft in body.drafts:
+            if draft.project_id is not None and draft.project_id not in allowed_projects:
+                raise ServiceError("Choose an existing Todoist project or Inbox.", 422)
+            if draft.due_date:
+                try:
+                    date.fromisoformat(draft.due_date)
+                except ValueError:
+                    raise ServiceError("Use a real due date in YYYY-MM-DD format.", 422) from None
+        results = []
+        for draft in body.drafts:
+            payload = draft.model_dump(exclude={"id"}, exclude_none=True)
+            payload["content"] = payload["content"].strip()
+            if not payload["content"]:
+                raise ServiceError("A task title cannot be blank.", 422)
+            if not chat_store().claim(draft.id, payload):
+                results.append({"id": draft.id, "state": "not_pending", "message": "Already created or unavailable."})
+                continue
+            try:
+                task_id = await create_task(token, payload)
+            except TodoistWriteError as exc:
+                state = "uncertain" if exc.uncertain else "pending"
+                chat_store().finish(draft.id, state, error=str(exc))
+                results.append({"id": draft.id, "state": state, "message": str(exc)})
+            else:
+                chat_store().finish(draft.id, "created", task_id=task_id)
+                results.append({"id": draft.id, "state": "created", "task_id": task_id})
+        created = sum(item["state"] == "created" for item in results)
+        if created:
+            chat_store().add_message("assistant", "Created {} task{} in Todoist.".format(
+                created, "" if created == 1 else "s"))
+        return {"results": results}
+
+    @app.post("/api/chat/clear")
+    async def clear_chat():
+        if not chat_store().clear():
+            raise ServiceError("Wait for Todoist task creation to finish before clearing chat.", 409)
+        return {"cleared": True}
 
     @app.post("/api/recommend")
     async def recommendations(body: RecommendationRequest):
