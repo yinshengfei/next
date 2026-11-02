@@ -19,6 +19,20 @@ HEADERS = {"X-Next-Local": "1"}
 PROJECTS = [{"id": "p1", "name": "Work"}]
 
 
+def test_cancel_chat_creation_leaves_todoist_unchanged(monkeypatch, tmp_path):
+    client, path = setup_client(monkeypatch, tmp_path, {"reply": "Preview", "drafts": [{"content": "New task"}]})
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Cancellation must not write to Todoist")
+    monkeypatch.setattr(app_module, "create_task", forbidden)
+    with client:
+        client.post("/api/chat", headers=HEADERS, json={"message": "Plan my day"})
+        draft = client.get("/api/chat/history").json()["drafts"][0]
+        body = {"id": draft["id"], "decision": "cancel"}
+        assert client.post("/api/chat/draft/cancel", headers=HEADERS, json=body).status_code == 200
+        assert client.post("/api/chat/draft/cancel", headers=HEADERS, json=body).status_code == 409
+        assert client.get("/api/chat/history").json()["drafts"][0]["state"] == "cancelled"
+
+
 @pytest.mark.parametrize("operation,changes", [("complete", {}), ("update", {"description": "Half finished"})])
 def test_chat_action_requires_confirmation_and_cannot_repeat(monkeypatch, tmp_path, operation, changes):
     client, path = setup_client(monkeypatch, tmp_path, {

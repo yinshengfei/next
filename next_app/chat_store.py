@@ -124,6 +124,10 @@ class ChatStore:
             ).rowcount
         return changed == 1
 
+    def cancel_draft(self, draft_id):
+        with self.connect() as db:
+            return db.execute("UPDATE drafts SET state='cancelled' WHERE id=? AND state='pending'", (draft_id,)).rowcount == 1
+
     def finish(self, draft_id: str, state: str, task_id: str = None, error: str = None):
         with self.connect() as db:
             db.execute(

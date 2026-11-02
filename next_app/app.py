@@ -316,6 +316,12 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
                 created, "" if created == 1 else "s"))
         return {"results": results}
 
+    @app.post("/api/chat/draft/cancel")
+    async def cancel_chat_draft(body: ChatActionDecision):
+        if body.decision != "cancel" or not chat_store().cancel_draft(body.id):
+            raise ServiceError("This draft is no longer pending.", 409)
+        return {"state": "cancelled"}
+
     @app.post("/api/chat/clear")
     async def clear_chat():
         if not chat_store().clear():

@@ -111,6 +111,12 @@ async def chat(
         AIChatReply,
         "You can discuss general topics and help plan work. Answer the latest user message naturally. "
         "For changes to existing tasks, return actions with operation update or complete and the exact "
+        "provided task_id. Prefer updating an existing task's progress/description over splitting it "
+        "into more tasks. Create a separate task only for an independently actionable deliverable "
+        "explicitly requested by the user, not incidental steps or prerequisites. When a user says "
+        "an entire piece of work is finished, review ALL related existing tasks and propose all "
+        "supported completions together in this reply for one batch confirmation. Do not infer "
+        "completion of tasks with independent outcomes merely because they share a topic. Use the exact "
         "provided task_id. Never create a duplicate to represent an update. Complete only when the user "
         "says that task is finished, not merely started or partly done. When matching is ambiguous, "
         "ask one question and propose no action for that ambiguous target. For update, supply only "

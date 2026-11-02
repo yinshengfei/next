@@ -19,7 +19,7 @@
 
     <nav class="mode-tabs" aria-label="Next sections">
       <button type="button" class="mode-tab" data-mode="overview" aria-current="page">Overview</button>
-      <button type="button" class="mode-tab" data-mode="chat">Chat &amp; create tasks</button>
+      <button type="button" class="mode-tab" data-mode="chat">Chat</button>
       <button type="button" class="mode-tab" data-mode="next">Find my next action</button>
     </nav>
 
@@ -38,7 +38,7 @@
 
     <section id="chat-panel" class="chat-panel" aria-labelledby="chat-title" hidden>
       <div class="chat-heading">
-        <div><p class="eyebrow">TALK IT THROUGH</p><h1 id="chat-title">What’s on your mind?</h1></div>
+        <div><p class="eyebrow">YOUR WORKSPACE</p><h1 id="chat-title">一起理清下一步</h1></div>
         <button type="button" id="clear-chat" class="text-button">Clear chat history</button>
       </div>
       <p class="subtitle">直接描述要新建、修改或完成的事项。AI 会生成操作卡片，只有点击 Confirm 后才会同步到 Todoist。</p>
@@ -46,15 +46,11 @@
       <p id="chat-status" class="status" role="status" aria-live="polite"></p>
       <div id="chat-error" class="error" role="alert" hidden></div>
       <form id="chat-form" class="chat-form">
-        <label for="chat-input">Message</label>
-        <textarea id="chat-input" rows="3" maxlength="12000" placeholder="For example: Help me plan tomorrow and add the concrete steps to Todoist." required></textarea>
+        <label for="chat-input">聊聊进度，或安排一件事</label>
+        <textarea id="chat-input" rows="3" maxlength="12000" placeholder="例如：发票已经交给行政了，把相关事项一起完成" required></textarea>
         <button id="chat-send" class="primary-button" type="submit">Send <span aria-hidden="true">→</span></button>
       </form>
-      <section id="draft-section" class="draft-section" aria-labelledby="draft-title" hidden>
-        <div class="section-heading"><h2 id="draft-title">Review before creating</h2><span class="hint">Nothing is sent to Todoist until you confirm.</span></div>
-        <div id="draft-list"></div>
-        <button id="create-drafts" type="button" class="primary-button">Confirm · Create selected tasks in Todoist</button>
-      </section>
+
     </section>
 
     <div id="next-panel" hidden>

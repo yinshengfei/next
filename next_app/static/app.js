@@ -393,6 +393,7 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   $("#chat-panel").hidden = !chat;
   $("#next-panel").hidden = overview || chat;
   if (overview) loadOverview();
+  if (chat) $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
   document.querySelectorAll("[data-mode]").forEach((item) => {
     if (item === button) item.setAttribute("aria-current", "page");
     else item.removeAttribute("aria-current");
@@ -413,109 +414,91 @@ function labeledField(label, control) {
   return wrapper;
 }
 
-function renderDraft(draft) {
-  const article = node("article", undefined, "draft-card");
-  article.dataset.draftId = draft.id;
-  const heading = node("div", undefined, "draft-card-heading");
-  const check = document.createElement("input");
-  check.type = "checkbox";
-  check.className = "draft-select";
-  check.checked = draft.state === "pending";
-  check.disabled = draft.state !== "pending";
-  heading.append(labeledField("Create this task", check));
-  if (draft.state === "created" && draft.task_id) {
-    const link = node("a", "Created in Todoist ↗", "hint");
-    link.href = `https://app.todoist.com/app/task/${encodeURIComponent(draft.task_id)}`;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    heading.append(link);
-  } else if (draft.state !== "pending") {
-    heading.append(node("span", draft.state === "uncertain" ? "Check Todoist before retrying" : draft.state, "hint"));
+async function decideActions(actions, decision = "confirm") {
+  if (busy) return;
+  setBusy(true); $("#chat-error").hidden = true;
+  let applied = 0;
+  try {
+    for (const action of actions) {
+      $("#chat-status").textContent = `正在处理 ${applied + 1} / ${actions.length}…`;
+      if (action.operation === "create") {
+        if (decision === "cancel") {
+          await post("/api/chat/draft/cancel", { id: action.id, decision: "cancel" });
+        } else {
+          const { id, content, description, project_id, due_date, priority } = action;
+          const result = await post("/api/chat/confirm", { drafts: [{ id, content, description, project_id, due_date, priority }] });
+          if (result.results[0].state !== "created") throw new Error(result.results[0].message || "新建未确认，请检查事项状态。");
+        }
+      } else {
+        await post("/api/chat/action", { id: action.id, decision });
+      }
+      applied += 1;
+    }
+    $("#chat-status").textContent = decision === "confirm" ? `已同步 ${applied} 项操作` : "已取消";
+  } catch (error) {
+    showChatError(`已处理 ${applied} 项，其余尚未确认。${error.message}`);
+  } finally {
+    overviewLoaded = false;
+    try { await refreshChat(); } catch (error) { showChatError(error.message); }
+    setBusy(false);
   }
-  article.append(heading);
-  const title = document.createElement("input");
-  title.type = "text";
-  title.maxLength = 500;
-  title.value = draft.content;
-  title.className = "draft-content";
-  title.disabled = draft.state !== "pending";
-  article.append(labeledField("Task title", title));
-  const description = document.createElement("textarea");
-  description.rows = 2;
-  description.maxLength = 3000;
-  description.value = draft.description || "";
-  description.className = "draft-description";
-  description.disabled = draft.state !== "pending";
-  article.append(labeledField("Description (optional)", description));
-  const details = node("div", undefined, "draft-details");
-  const project = document.createElement("select");
-  project.className = "draft-project";
-  project.append(new Option("Inbox", ""));
-  projectOptions.filter((item) => !item.is_inbox_project).forEach((item) => project.append(new Option(item.name, item.id)));
-  project.value = draft.project_id || "";
-  project.disabled = draft.state !== "pending";
-  details.append(labeledField("Project", project));
-  const due = document.createElement("input");
-  due.type = "date";
-  due.className = "draft-due";
-  due.value = draft.due_date || "";
-  due.disabled = draft.state !== "pending";
-  details.append(labeledField("Due date (optional)", due));
-  const priority = document.createElement("select");
-  priority.className = "draft-priority";
-  for (let value = 1; value <= 4; value += 1) priority.append(new Option(`P${5 - value}`, String(value)));
-  priority.value = String(draft.priority);
-  priority.disabled = draft.state !== "pending";
-  details.append(labeledField("Priority", priority));
-  article.append(details);
-  if (draft.error) article.append(node("p", draft.error, "error-inline"));
-  return article;
 }
 
 function renderChatAction(action) {
-  const card = node("article", undefined, "draft-card chat-action-card");
-  card.append(node("h3", `${action.operation === "complete" ? "完成事项" : "修改事项"} · ${action.before.name}`));
-  card.append(node("p", action.reason));
-  const link = node("a", "查看 Todoist 原事项");
+  if (action.operation === "create") action = { ...action, before: { name: action.content },
+    reason: action.description || "新建待办", changes: {}, state: action.state === "created" ? "applied" : action.state };
+  const row = node("article", undefined, "action-row");
+  const details = node("details", undefined, "action-detail");
+  const summary = node("summary");
+  summary.append(node("span", action.operation === "complete" ? "完成" : action.operation === "create" ? "新建" : "修改", "action-tag"), node("span", action.before.name, "action-name"));
+  details.append(summary);
+  const body = node("div", undefined, "action-expanded");
+  body.append(node("p", action.reason));
+  const link = node("a", "在 Todoist 查看 ↗");
   link.href = `https://app.todoist.com/app/task/${encodeURIComponent(action.task_id)}`;
-  link.target = "_blank"; link.rel = "noopener noreferrer"; card.append(link);
-  if (action.operation === "complete") {
-    card.append(node("p", "未完成 → 已完成。点击 Confirm 后同步到 Todoist。"));
-  } else {
-    const fields = { content: ["标题", "name"], description: ["说明 / 进度", "description"],
-      due_date: ["日期", "due"], priority: ["优先级", "priority"], due_string: ["日期", "due"] };
-    Object.entries(action.changes).forEach(([key, value]) => {
-      const [label, source] = fields[key];
-      let before = action.before[source] || "未设置";
-      let after = key === "due_string" ? "无日期" : value || "清空";
-      if (key === "priority") { before = `P${5 - action.before.priority}`; after = `P${5 - value}`; }
-      card.append(node("h4", label), node("p", `原来：${before}`), node("p", `改为：${after}`));
-    });
-  }
-  if (action.error) card.append(node("p", action.error, "error-inline"));
+  link.target = "_blank"; link.rel = "noopener noreferrer";
+  if (action.task_id) body.append(link);
+  if (action.operation === "create") body.append(node("p", `日期：${action.due_date || "未设置"} · P${5 - action.priority}`));
+  const fields = { content: ["标题", "name"], description: ["进度 / 说明", "description"], due_date: ["日期", "due"], priority: ["优先级", "priority"], due_string: ["日期", "due"] };
+  if (action.operation === "complete") body.append(node("p", "未完成 → 已完成"));
+  Object.entries(action.changes).forEach(([key, value]) => {
+    const [label, source] = fields[key];
+    const before = key === "priority" ? `P${5 - action.before.priority}` : action.before[source] || "未设置";
+    const after = key === "priority" ? `P${5 - value}` : key === "due_string" ? "无日期" : value || "清空";
+    body.append(node("p", `${label}：${before} → ${after}`));
+  });
+  details.append(body); row.append(details);
+  const controls = node("div", undefined, "action-controls");
   if (action.state === "pending") {
-    const confirm = node("button", "Confirm · 确认执行", "primary-button");
-    const cancel = node("button", "取消", "text-button");
-    for (const [button, decision] of [[confirm, "confirm"], [cancel, "cancel"]]) {
-      button.type = "button";
-      button.addEventListener("click", async () => {
-        if (busy) return;
-        setBusy(true); $("#chat-error").hidden = true;
-        $("#chat-status").textContent = decision === "confirm" ? "正在同步到 Todoist…" : "正在取消…";
-        try {
-          await post("/api/chat/action", { id: action.id, decision });
-          overviewLoaded = false;
-          $("#chat-status").textContent = decision === "confirm" ? "已确认并同步到 Todoist。" : "已取消，事项未修改。";
-        } catch (error) { showChatError(error.message); }
-        finally { try { await refreshChat(); } catch (error) { showChatError(error.message); } setBusy(false); }
-      });
-    }
-    card.append(confirm, cancel);
+    const confirm = node("button", "Confirm", "compact-confirm");
+    const cancel = node("button", "×", "compact-cancel");
+    cancel.setAttribute("aria-label", `取消：${action.before.name}`);
+    confirm.type = cancel.type = "button";
+    confirm.addEventListener("click", () => decideActions([action]));
+    cancel.addEventListener("click", () => decideActions([action], "cancel"));
+    controls.append(confirm, cancel);
   } else {
-    const states = { applied: "已执行", cancelled: "已取消", stale: "已过期，请重新生成", uncertain: "结果待核对，请查看 Todoist", applying: "正在执行" };
-    card.append(node("p", states[action.state] || action.state, "hint"));
+    const states = { applied: "✓ 已同步", cancelled: "已取消", stale: "需重新预览", uncertain: "需核对", applying: "处理中" };
+    controls.append(node("span", states[action.state] || action.state, "action-state"));
   }
-  return card;
+  row.append(controls);
+  if (action.error) row.append(node("p", action.error, "error-inline action-row-error"));
+  return row;
+}
+
+function renderActionGroup(actions) {
+  const group = node("section", undefined, "action-group");
+  const header = node("div", undefined, "action-group-header");
+  const pending = actions.filter((action) => action.state === "pending");
+  header.append(node("span", `事项操作 · ${actions.length} 项`, "action-group-label"));
+  if (pending.length) {
+    const all = node("button", `Confirm all · ${pending.length}`, "compact-confirm");
+    all.type = "button";
+    all.addEventListener("click", () => decideActions(pending));
+    header.append(all);
+  }
+  group.append(header, ...actions.map(renderChatAction));
+  return group;
 }
 
 async function refreshChat() {
@@ -525,12 +508,15 @@ async function refreshChat() {
   const messages = $("#chat-messages");
   messages.replaceChildren(...data.messages.map((message) => {
     const item = renderMessage(message);
-    (data.actions || []).filter((action) => action.message_id === message.id).forEach((action) => item.append(renderChatAction(action)));
+    const actions = [
+      ...(data.actions || []).filter((action) => action.message_id === message.id),
+      ...data.drafts.filter((draft) => draft.message_id === message.id).map((draft) => ({ ...draft, operation: "create" }))
+    ];
+    if (actions.length) item.append(renderActionGroup(actions));
     return item;
   }));
   messages.scrollTop = messages.scrollHeight;
-  $("#draft-list").replaceChildren(...data.drafts.map(renderDraft));
-  $("#draft-section").hidden = data.drafts.length === 0;
+
 }
 
 async function loadProjects() {
@@ -558,36 +544,6 @@ $("#chat-form").addEventListener("submit", async (event) => {
     $("#chat-input").value = "";
     await refreshChat();
     $("#chat-status").textContent = "";
-  } catch (error) {
-    showChatError(error.message);
-  } finally {
-    setBusy(false);
-  }
-});
-
-$("#create-drafts").addEventListener("click", async () => {
-  if (busy) return;
-  const drafts = [...document.querySelectorAll(".draft-card")]
-    .filter((card) => $(".draft-select", card).checked && !$(".draft-select", card).disabled)
-    .map((card) => ({
-      id: card.dataset.draftId,
-      content: $(".draft-content", card).value.trim(),
-      description: $(".draft-description", card).value.trim(),
-      project_id: $(".draft-project", card).value || null,
-      due_date: $(".draft-due", card).value || null,
-      priority: Number($(".draft-priority", card).value),
-    }));
-  if (!drafts.length) return showChatError("Select at least one pending draft.");
-  if (drafts.some((draft) => !draft.content)) return showChatError("Every selected task needs a title.");
-  setBusy(true);
-  $("#chat-error").hidden = true;
-  $("#chat-status").textContent = `Creating ${drafts.length} task${drafts.length === 1 ? "" : "s"} in Todoist…`;
-  try {
-    const data = await post("/api/chat/confirm", { drafts }, 300000);
-    await refreshChat();
-    const created = data.results.filter((item) => item.state === "created").length;
-    const uncertain = data.results.filter((item) => item.state === "uncertain").length;
-    $("#chat-status").textContent = `${created} created${uncertain ? ` · ${uncertain} need a manual check in Todoist` : ""}.`;
   } catch (error) {
     showChatError(error.message);
   } finally {
