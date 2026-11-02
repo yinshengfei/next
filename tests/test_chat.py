@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from next_app import app as app_module
 from next_app import ai
+from next_app.chat_time import chat_timestamp
 from next_app.chat_store import ChatStore
 from next_app.config import Settings
 from next_app.models import AIChatReply, ChatRequest, ConfirmDraftsRequest, Task
@@ -56,9 +57,14 @@ def test_chat_time_preserves_old_utc_and_new_send_time(tmp_path):
     with store.connect() as db:
         db.execute("INSERT INTO messages(role, content, created_at) VALUES ('user', 'Old', '2026-11-02 18:30:00')")
     store.add_message("user", "New", created_at="2026-11-03T03:05:12+08:00")
-    expected = ["2026-11-03T02:30:00+08:00", "2026-11-03T03:05:12+08:00"]
+    expected = ["2026-11-02T10:30:00-08:00", "2026-11-02T11:05:12-08:00"]
     assert [m["created_at"] for m in store.recent()] == expected
     assert [m["created_at"] for m in store.history()["messages"]] == expected
+
+
+def test_chat_time_uses_los_angeles_daylight_saving():
+    assert chat_timestamp("2026-07-01T12:00:00Z") == "2026-07-01T05:00:00-07:00"
+    assert chat_timestamp("2026-11-02T12:00:00Z") == "2026-11-02T04:00:00-08:00"
 
 
 def test_cancel_chat_creation_leaves_todoist_unchanged(monkeypatch, tmp_path):
@@ -133,7 +139,7 @@ def setup_client(monkeypatch, tmp_path, reply):
     async def chat(settings, key, history, tasks, projects):
         assert history[-1]["role"] == "user"
         assert history[-1]["content"] == "Plan my day"
-        assert history[-1]["created_at"].endswith("+08:00")
+        assert history[-1]["created_at"].endswith("-08:00")
         assert tasks[0].name == "Existing task"
         return AIChatReply.model_validate(reply)
 

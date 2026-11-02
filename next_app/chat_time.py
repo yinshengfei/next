@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-CHAT_TIMEZONE = ZoneInfo("Asia/Shanghai")
+CHAT_TIMEZONE = ZoneInfo("America/Los_Angeles")
 
 
 def chat_now():

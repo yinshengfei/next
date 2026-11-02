@@ -99,7 +99,7 @@ async def chat(
         settings, key,
         {
             "local_time": chat_now(),
-            "timezone": "Asia/Shanghai",
+            "timezone": "America/Los_Angeles",
             "response_language": settings.language,
             "conversation": history,
             "expected_draft_count": expected_draft_count,
@@ -137,7 +137,7 @@ async def chat(
         "is not executed. Do not claim creation/completion until a confirmation result says so. "
         "Each conversation message has its actual created_at timestamp. Interpret relative dates "
         "in historical messages relative to that message's timestamp, and the latest request "
-        "relative to its timestamp in Asia/Shanghai. local_time is the current request time. "
+        "relative to its timestamp in America/Los_Angeles. local_time is the current request time. "
         "For changes to existing tasks, return actions with operation update or complete and the exact "
         "provided task_id. Prefer updating an existing task's progress/description over splitting it "
         "into more tasks. Create a separate task only for an independently actionable deliverable "

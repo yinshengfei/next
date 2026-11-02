@@ -180,7 +180,7 @@ The existing OpenAI SDK now accepts a configurable HTTPS `base_url` and `model`.
 
 Setup accepts `--base-url` and `--model` flags and preserves your other settings. These flags apply only to `setup`; `run` and `check` use the saved preferences. On official OpenAI, GPT-5.4 models retain the previous reasoning effort `none` setting. Third-party endpoints receive no model-specific reasoning override, to avoid assuming they support that parameter; their model defaults may take longer. AI requests use a 60-second timeout and no automatic retries. An upstream AI timeout does not stop Next's local server; the page explains that Next is still running and allows a manual retry.
 
-Next uses the Mac's local date and timezone. A Todoist due date and hard deadline are kept distinct. It never changes either one.
+Next uses the Mac's local date for task views and recommendations. Chat timestamps and relative dates use America/Los_Angeles, including automatic daylight saving time changes. A Todoist due date and hard deadline are kept distinct. Next never changes either one without confirmation.
 
 ## Privacy and request costs
 

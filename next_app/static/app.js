@@ -432,9 +432,9 @@ loadOverview();
 function renderMessage(message) {
   const article = node("article", undefined, `chat-message ${message.role}`);
   article.append(node("span", message.role === "user" ? "You" : "Next", "step-label"));
-  const time = node("time", new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at)), "message-time");
+  const time = node("time", new Intl.DateTimeFormat("zh-CN", { timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at)), "message-time");
   time.dateTime = message.created_at;
-  time.title = `${message.created_at} · 北京时间`;
+  time.title = `${message.created_at} · 洛杉矶时间`;
   article.append(time);
   article.append(node("p", message.content));
   return article;
@@ -548,8 +548,8 @@ async function refreshChat() {
   const messages = $("#chat-messages");
   let previousHour = "";
   messages.replaceChildren(...data.messages.flatMap((message) => {
-    const hour = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at));
-    const separator = hour !== previousHour ? node("div", `${hour}:00 · 北京时间`, "chat-hour") : null;
+    const hour = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at));
+    const separator = hour !== previousHour ? node("div", `${hour}:00 · 洛杉矶时间`, "chat-hour") : null;
     previousHour = hour;
     const item = renderMessage(message);
     const actions = [
