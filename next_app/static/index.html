@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="A small local assistant to help you choose what to work on next.">
-  <title>Next — What should I do now?</title>
+  <meta name="description" content="Chat, capture tasks in Todoist, and choose what to do next.">
+  <title>Next — Chat and tasks</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
@@ -16,6 +16,45 @@
       <a class="brand" href="/" aria-label="Next home"><span class="brand-mark" aria-hidden="true">↗</span> next<span class="brand-period">.</span></a>
       <span class="connection" id="connection">On your Mac</span>
     </header>
+
+    <nav class="mode-tabs" aria-label="Next sections">
+      <button type="button" class="mode-tab" data-mode="overview" aria-current="page">Overview</button>
+      <button type="button" class="mode-tab" data-mode="chat">Chat</button>
+      <button type="button" class="mode-tab" data-mode="next">Find my next action</button>
+    </nav>
+
+    <section id="overview-panel" class="overview-panel" aria-labelledby="overview-title">
+      <div class="overview-heading">
+        <div><p class="eyebrow">YOUR WORK AT A GLANCE</p><h1 id="overview-title">Overview</h1>
+          <p class="subtitle">Workstreams arranged by AI. Every Todoist task is accounted for by Next.</p></div>
+        <button type="button" id="overview-refresh" class="text-button">Refresh Todoist</button>
+      </div>
+      <p id="overview-status" class="status" role="status"></p>
+      <div id="overview-error" class="error" role="alert" hidden></div>
+      <nav id="overview-views" class="overview-views" aria-label="Overview views"></nav>
+      <div id="overview-sections"></div>
+      <p id="overview-meta" class="hint"></p>
+    </section>
+
+    <section id="chat-panel" class="chat-panel" aria-labelledby="chat-title" hidden>
+      <div class="chat-heading">
+        <div><p class="eyebrow">YOUR WORKSPACE</p><h1 id="chat-title">一起理清下一步</h1></div>
+        <button type="button" id="clear-chat" class="text-button">Clear chat history</button>
+      </div>
+      <p class="subtitle">直接描述要新建、修改或完成的事项。AI 会生成操作卡片，只有点击 Confirm 后才会同步到 Todoist。</p>
+      <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <p id="chat-status" class="status" role="status" aria-live="polite"></p>
+      <p id="chat-sync" class="hint" role="status" aria-live="polite"></p>
+      <div id="chat-error" class="error" role="alert" hidden></div>
+      <form id="chat-form" class="chat-form">
+        <label for="chat-input">聊聊进度，或安排一件事</label>
+        <textarea id="chat-input" rows="3" maxlength="12000" placeholder="例如：发票已经交给行政了，把相关事项一起完成" required></textarea>
+        <button id="chat-send" class="primary-button" type="submit">Send <span aria-hidden="true">→</span></button>
+      </form>
+
+    </section>
+
+    <div id="next-panel" hidden>
 
     <section class="intro" aria-labelledby="page-title">
       <p class="eyebrow">LESS DECIDING. MORE DOING.</p>
@@ -53,6 +92,11 @@
           <button type="button" class="choice" data-energy="high" aria-pressed="false"><span class="energy-dot high" aria-hidden="true"></span>High</button>
         </div>
       </fieldset>
+      <label class="recommend-description" for="recommend-description">
+        <span>还有什么想告诉我？ <span class="hint">可选</span></span>
+        <textarea id="recommend-description" rows="2" maxlength="2000" placeholder="例如：今天有点累，想做不用动脑的事；或者想优先推进统计学论文。"></textarea>
+        <span class="hint">填写后会结合你的状态和意愿推荐；留空则按时间与精力推荐。</span>
+      </label>
       <button id="find-button" class="primary-button" type="submit"><span aria-hidden="true">✧</span> Find My Next Action <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
 
@@ -80,8 +124,9 @@
         <p id="candidate-note" class="hint"></p>
       </div>
     </section>
+    </div>
 
-    <footer class="page-footer"><span>Small steps count.</span><span>Read-only · Your tasks stay in Todoist</span></footer>
+    <footer class="page-footer"><span>Small steps count.</span><span>Chat is saved on this Mac · Task creation requires your confirmation</span></footer>
   </main>
 
   <template id="recommendation-template">
@@ -95,6 +140,16 @@
       <div class="assumptions" hidden><span class="step-label">ASSUMPTIONS</span><ul></ul></div>
       <button type="button" class="easier-button">✧ Make It Easier</button>
       <div class="breakdown" aria-live="polite" hidden></div>
+      <div class="task-progress">
+        <button type="button" class="complete-button">✓ Mark task complete</button>
+        <form class="progress-form">
+          <label>Describe progress or newly discovered work
+            <textarea class="progress-input" rows="2" maxlength="3000" placeholder="What did you finish? What remains or changed?" required></textarea>
+          </label>
+          <button type="submit" class="progress-button">Review AI updates</button>
+        </form>
+        <div class="progress-preview" hidden></div>
+      </div>
     </article>
   </template>
 </body>

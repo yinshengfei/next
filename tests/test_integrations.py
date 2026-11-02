@@ -23,6 +23,27 @@ def action(id, minutes=10):
     }
 
 
+@pytest.mark.parametrize("description,expected", [("", None), ("   ", None), ("  有点累，想整理资料  ", "有点累，想整理资料")])
+def test_recommendation_description_is_optional_and_shared_with_easier(monkeypatch, description, expected):
+    from next_app.models import SuggestedAction
+    captured = []
+    async def respond(settings, key, payload, schema, instruction, **kwargs):
+        captured.append(payload)
+        if schema is AIRecommendations:
+            return schema(recommendations=[action("1")])
+        return schema(steps=[{"action": "Open notes", "estimated_minutes": 2}], assumptions=[])
+    monkeypatch.setattr(ai, "structured_call", respond)
+    preferences = Preferences(minutes=15, energy="low", description=description)
+    task = Task(id="1", name="Organize notes")
+    run(ai.recommend(Settings(), "test", [task], preferences))
+    run(ai.make_easier(Settings(), "test", task, SuggestedAction(**action("1")), preferences))
+    for payload in captured:
+        assert payload.get("user_description") == expected
+        if expected is None:
+            assert "user_description" not in payload
+        assert payload["available_minutes"] == 15 and payload["energy"] == "low"
+
+
 def api_response(payload, status="completed"):
     return {
         "id": "resp_test", "object": "response", "created_at": 1, "status": status,
@@ -51,7 +72,7 @@ def upstream(monkeypatch):
             if request.url.params.get("cursor") == "page2":
                 return httpx.Response(200, json={"results": [{"id": "3", "content": "Academic CV", "project_id": "p", "parent_id": "1"}], "next_cursor": None})
             return httpx.Response(200, json={"results": [
-                {"id": "1", "content": "Research plan", "project_id": "p", "priority": 4, "due": {"date": "2026-10-26"}, "deadline": {"date": "2026-10-28"}},
+                {"id": "1", "content": "Research plan", "project_id": "p", "priority": 1, "due": {"date": "2026-10-26"}, "deadline": {"date": "2026-10-28"}},
                 {"id": "2", "content": "Read paper", "project_id": "p", "duration": {"amount": 1, "unit": "day"}},
             ], "next_cursor": "page2"})
         assert request.url.host == state.get("ai_host", "api.openai.com")
@@ -90,7 +111,7 @@ def test_todoist_pagination_project_parent_and_duration(upstream):
     requests, _ = upstream
     tasks = run(todoist.fetch_tasks("test-todoist-token"))
     assert len(tasks) == 3
-    assert tasks[0].priority == 4 and tasks[0].deadline == "2026-10-28"
+    assert tasks[0].priority == 1 and tasks[0].deadline == "2026-10-28"
     assert tasks[1].duration_minutes == 1440
     assert tasks[2].parent_name == "Research plan"
     assert tasks[2].project_name == "Research"
@@ -228,6 +249,21 @@ def test_pagination_loop_is_not_silently_truncated():
             return await todoist.read_pages(client, "tasks")
     with pytest.raises(ServiceError, match="pagination"):
         run(load())
+
+
+def test_todoist_update_and_close_use_expected_endpoints(monkeypatch):
+    calls = []
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, path, json=None):
+            calls.append((path, json))
+            return httpx.Response(200, json={})
+    monkeypatch.setattr(todoist.httpx, "AsyncClient", lambda **kwargs: Client())
+    run(todoist.write_existing_task("token", "task123", payload={"description": "Half done"}))
+    run(todoist.write_existing_task("token", "task123", complete=True))
+    assert calls == [("tasks/task123", {"description": "Half done"}),
+                     ("tasks/task123/close", None)]
 
 
 def test_transport_timeout_is_readable():
