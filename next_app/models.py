@@ -82,7 +82,7 @@ class TaskDraft(StrictModel):
     description: str = Field(default="", max_length=3000)
     project_id: Optional[str] = Field(default=None, max_length=100)
     due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    priority: int = Field(default=4, strict=True, ge=1, le=4)  # API v1: 1 is highest.
+    priority: int = Field(default=1, strict=True, ge=1, le=4)  # Todoist API: 4 is P1, 1 is P4.
 
 
 class AIChatReply(StrictModel):
@@ -100,7 +100,7 @@ class ConfirmedDraft(StrictModel):
     description: str = Field(default="", max_length=3000)
     project_id: Optional[str] = Field(default=None, max_length=100)
     due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    priority: int = Field(default=4, strict=True, ge=1, le=4)
+    priority: int = Field(default=1, strict=True, ge=1, le=4)
 
 
 class ConfirmDraftsRequest(StrictModel):

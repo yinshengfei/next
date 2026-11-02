@@ -280,7 +280,7 @@ function renderDraft(draft) {
   details.append(labeledField("Due date (optional)", due));
   const priority = document.createElement("select");
   priority.className = "draft-priority";
-  for (let value = 1; value <= 4; value += 1) priority.append(new Option(`P${value}`, String(value)));
+  for (let value = 1; value <= 4; value += 1) priority.append(new Option(`P${5 - value}`, String(value)));
   priority.value = String(draft.priority);
   priority.disabled = draft.state !== "pending";
   details.append(labeledField("Priority", priority));
