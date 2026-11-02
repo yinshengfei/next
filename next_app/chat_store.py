@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .config import CONFIG_DIR
+from .chat_time import chat_now, chat_timestamp
 
 
 CHAT_PATH = CONFIG_DIR / "chat.sqlite3"
@@ -59,14 +60,15 @@ class ChatStore:
         db.execute("PRAGMA foreign_keys=ON")
         return db
 
-    def add_message(self, role: str, content: str) -> int:
+    def add_message(self, role: str, content: str, created_at=None) -> int:
         with self.connect() as db:
-            return db.execute("INSERT INTO messages(role, content) VALUES (?, ?)", (role, content)).lastrowid
+            return db.execute("INSERT INTO messages(role, content, created_at) VALUES (?, ?, ?)",
+                              (role, content, created_at or chat_now())).lastrowid
 
     def add_reply(self, content: str, drafts: list, actions: list = None) -> list:
         with self.connect() as db:
             message_id = db.execute(
-                "INSERT INTO messages(role, content) VALUES ('assistant', ?)", (content,)
+                "INSERT INTO messages(role, content, created_at) VALUES ('assistant', ?, ?)", (content, chat_now())
             ).lastrowid
             saved = []
             for draft in drafts:
@@ -85,13 +87,13 @@ class ChatStore:
     def recent(self, limit: int = 12) -> list:
         with self.connect() as db:
             rows = db.execute(
-                "SELECT role, content FROM messages ORDER BY id DESC LIMIT ?", (limit,)
+                "SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
-        return [dict(row) for row in reversed(rows)]
+        return [{**dict(row), "created_at": chat_timestamp(row["created_at"])} for row in reversed(rows)]
 
     def history(self) -> dict:
         with self.connect() as db:
-            messages = [dict(row) for row in db.execute(
+            messages = [{**dict(row), "created_at": chat_timestamp(row["created_at"])} for row in db.execute(
                 "SELECT id, role, content, created_at FROM messages ORDER BY id"
             )]
             drafts = [

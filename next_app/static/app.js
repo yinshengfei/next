@@ -404,6 +404,10 @@ loadOverview();
 function renderMessage(message) {
   const article = node("article", undefined, `chat-message ${message.role}`);
   article.append(node("span", message.role === "user" ? "You" : "Next", "step-label"));
+  const time = node("time", new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at)), "message-time");
+  time.dateTime = message.created_at;
+  time.title = `${message.created_at} · 北京时间`;
+  article.append(time);
   article.append(node("p", message.content));
   return article;
 }
@@ -506,14 +510,18 @@ async function refreshChat() {
   if (!response.ok) throw new Error("Cannot load local chat history.");
   const data = await response.json();
   const messages = $("#chat-messages");
-  messages.replaceChildren(...data.messages.map((message) => {
+  let previousHour = "";
+  messages.replaceChildren(...data.messages.flatMap((message) => {
+    const hour = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at));
+    const separator = hour !== previousHour ? node("div", `${hour}:00 · 北京时间`, "chat-hour") : null;
+    previousHour = hour;
     const item = renderMessage(message);
     const actions = [
       ...(data.actions || []).filter((action) => action.message_id === message.id),
       ...data.drafts.filter((draft) => draft.message_id === message.id).map((draft) => ({ ...draft, operation: "create" }))
     ];
     if (actions.length) item.append(renderActionGroup(actions));
-    return item;
+    return separator ? [separator, item] : [item];
   }));
   messages.scrollTop = messages.scrollHeight;
 

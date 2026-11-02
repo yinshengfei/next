@@ -19,6 +19,16 @@ HEADERS = {"X-Next-Local": "1"}
 PROJECTS = [{"id": "p1", "name": "Work"}]
 
 
+def test_chat_time_preserves_old_utc_and_new_send_time(tmp_path):
+    store = ChatStore(tmp_path / "chat.db")
+    with store.connect() as db:
+        db.execute("INSERT INTO messages(role, content, created_at) VALUES ('user', 'Old', '2026-11-02 18:30:00')")
+    store.add_message("user", "New", created_at="2026-11-03T03:05:12+08:00")
+    expected = ["2026-11-03T02:30:00+08:00", "2026-11-03T03:05:12+08:00"]
+    assert [m["created_at"] for m in store.recent()] == expected
+    assert [m["created_at"] for m in store.history()["messages"]] == expected
+
+
 def test_cancel_chat_creation_leaves_todoist_unchanged(monkeypatch, tmp_path):
     client, path = setup_client(monkeypatch, tmp_path, {"reply": "Preview", "drafts": [{"content": "New task"}]})
     async def forbidden(*args, **kwargs):
@@ -89,7 +99,9 @@ def setup_client(monkeypatch, tmp_path, reply):
         return PROJECTS
 
     async def chat(settings, key, history, tasks, projects):
-        assert history[-1] == {"role": "user", "content": "Plan my day"}
+        assert history[-1]["role"] == "user"
+        assert history[-1]["content"] == "Plan my day"
+        assert history[-1]["created_at"].endswith("+08:00")
         assert tasks[0].name == "Existing task"
         return AIChatReply.model_validate(reply)
 

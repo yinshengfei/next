@@ -15,6 +15,7 @@ from openai import (
 from pydantic import BaseModel, ValidationError
 
 from .config import OPENAI_BASE_URL, Settings
+from .chat_time import chat_now
 from .models import AIBreakdown, AIChatReply, AIRecommendations, OverviewArea, OverviewAudit, OverviewLayout, OverviewTaxonomy, OverviewWorkstream, Preferences, ProgressPlan, SuggestedAction, Task
 from .todoist import ServiceError
 
@@ -97,7 +98,8 @@ async def chat(
     result = await structured_call(
         settings, key,
         {
-            "local_time": datetime.now().astimezone().isoformat(timespec="minutes"),
+            "local_time": chat_now(),
+            "timezone": "Asia/Shanghai",
             "response_language": settings.language,
             "conversation": history,
             "expected_draft_count": expected_draft_count,
@@ -110,6 +112,9 @@ async def chat(
         },
         AIChatReply,
         "You can discuss general topics and help plan work. Answer the latest user message naturally. "
+        "Each conversation message has its actual created_at timestamp. Interpret relative dates "
+        "in historical messages relative to that message's timestamp, and the latest request "
+        "relative to its timestamp in Asia/Shanghai. local_time is the current request time. "
         "For changes to existing tasks, return actions with operation update or complete and the exact "
         "provided task_id. Prefer updating an existing task's progress/description over splitting it "
         "into more tasks. Create a separate task only for an independently actionable deliverable "

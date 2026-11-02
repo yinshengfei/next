@@ -225,6 +225,10 @@ legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
 .chat-message .action-expanded p { font-size: 11px; line-height: 1.7; margin: 4px 0; }
 .action-expanded a { font-size: 10px; color: var(--accent); }
 .action-row-error { flex-basis: 100%; }
+.chat-hour { display: flex; align-items: center; gap: 12px; color: #91998b; font-size: 10px; flex-shrink: 0; margin: 4px 0; }
+.chat-hour::before, .chat-hour::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.message-time { font-size: 10px; color: #949c8d; margin-left: 9px; font-variant-numeric: tabular-nums; }
+.chat-message.user .message-time { display: block; text-align: right; margin: 0 0 4px; }
 @media (max-width: 560px) {
   .chat-heading h1 { font-size: 25px; }
   .chat-messages { max-height: 58vh; }

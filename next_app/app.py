@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import ai
 from .candidates import select_candidates
 from .chat_store import ChatStore
+from .chat_time import chat_now
 from .overview import build_overview
 from .overview_store import OverviewStore
 from .config import Settings, SetupError, get_secret, load_settings
@@ -204,6 +205,7 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
 
     @app.post("/api/chat")
     async def chat_message(body: ChatRequest):
+        sent_at = chat_now()
         if app.state.ai_lock.locked():
             raise ServiceError("Another AI request is running. Please wait.", 429)
         async with app.state.ai_lock:
@@ -212,9 +214,9 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
             tasks, project_options = await asyncio.gather(
                 fetch_tasks(token), fetch_projects(token),
             )
-            history = chat_store().recent() + [{"role": "user", "content": body.message.strip()}]
+            history = chat_store().recent() + [{"role": "user", "content": body.message.strip(), "created_at": sent_at}]
             result = await ai.chat(settings, key, history, tasks, project_options)
-            chat_store().add_message("user", body.message.strip())
+            chat_store().add_message("user", body.message.strip(), created_at=sent_at)
             by_id = {task.id: task for task in tasks}
             actions = []
             seen = set()
