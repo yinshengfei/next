@@ -7,6 +7,7 @@ from typing import Any, List
 import httpx
 
 from .models import Task
+from .config import load_settings
 
 
 BASE_URL = "https://api.todoist.com/api/v1/"
@@ -69,7 +70,7 @@ def date_value(value: Any):
 
 
 async def fetch_tasks(token: str) -> List[Task]:
-    async with httpx.AsyncClient(
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy,
         base_url=BASE_URL,
         headers={"Authorization": "Bearer " + token},
         timeout=20,
@@ -108,7 +109,7 @@ async def fetch_tasks(token: str) -> List[Task]:
 
 
 async def fetch_projects(token: str) -> List[dict]:
-    async with httpx.AsyncClient(
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy,
         base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
         timeout=20, follow_redirects=False,
     ) as client:
@@ -127,7 +128,7 @@ async def fetch_completed_range(token: str, since: datetime, until: datetime) ->
     items = []
     cursor = None
     seen = set()
-    async with httpx.AsyncClient(base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy, base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
                                  timeout=20, follow_redirects=False) as client:
         for _ in range(100):
             params = {"since": since.isoformat(), "until": until.isoformat(), "limit": 200}
@@ -173,7 +174,7 @@ async def fetch_recent_completed(token: str, now: datetime = None) -> List[dict]
 
 async def fetch_account_started(token: str) -> datetime:
     """Read only the history boundary; never retain the user response (it can contain tokens)."""
-    async with httpx.AsyncClient(base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy, base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
                                  timeout=20, follow_redirects=False) as client:
         try:
             response = await client.get("user")
@@ -188,7 +189,7 @@ async def fetch_account_started(token: str) -> datetime:
 
 async def create_task(token: str, payload: dict) -> str:
     """Create one reviewed task; ambiguous failures must not be retried automatically."""
-    async with httpx.AsyncClient(
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy,
         base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
         timeout=20, follow_redirects=False,
     ) as client:
@@ -224,7 +225,7 @@ async def write_existing_task(token: str, task_id: str, payload: dict = None, co
     if not payload and not complete:
         return
     path = "tasks/" + task_id + ("/close" if complete else "")
-    async with httpx.AsyncClient(base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy, base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
                                  timeout=20, follow_redirects=False) as client:
         try:
             response = await client.post(path) if complete else await client.post(path, json=payload)

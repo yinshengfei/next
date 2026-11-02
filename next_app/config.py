@@ -26,6 +26,7 @@ class Settings(BaseModel):
     base_url: str = Field(default=OPENAI_BASE_URL, min_length=1, max_length=2048)
     model: str = Field(default="gpt-5.4-mini", min_length=1, max_length=100)
     overview_model: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    todoist_use_environment_proxy: bool = True
     port: int = Field(default=8765, ge=1024, le=65535)
     language: str = Field(default="English", min_length=1, max_length=50)
     # Optional names or IDs, matched exactly (names are case-insensitive).
