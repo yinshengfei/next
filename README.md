@@ -10,9 +10,9 @@ A local assistant for chatting, capturing Todoist tasks, and choosing what to wo
 
 In **Chat & create tasks**, talk to Next about anything or describe work you want to capture. It can suggest up to 35 Todoist task drafts at a time. Edit the title, description, existing project, due date, and priority; select the drafts you want; then click **Create selected tasks in Todoist**. Chatting and drafting alone never create tasks. A failed or interrupted create request is not automatically retried.
 
-In **Find my next action**, choose your available time and energy. Next reads Todoist, shortlists at most 18 tasks locally, and asks AI for one next action and two alternatives. **Make It Easier** turns a recommendation into 1–3 smaller steps.
+In **Find my next action**, choose your available time and energy. Next reads Todoist, shortlists at most 18 tasks locally, and asks AI for one next action and two alternatives. **Make It Easier** turns a recommendation into 1–3 smaller steps. Use **Mark task complete** on a recommended task when the whole task is done. Or describe partial progress or newly discovered work below that task: Next previews an edit to the original task and up to five new tasks. Review and confirm before those changes reach Todoist.
 
-Chat history and drafts are saved locally in `~/Library/Application Support/Next/chat.sqlite3` with owner-only permissions. **Clear chat history** removes them from this Mac, but leaves already-created Todoist tasks untouched. The latest 12 messages are used as AI context. There is no task completion, editing of existing Todoist tasks, calendar integration, public deployment, or background AI activity.
+Chat history and drafts are saved locally in `~/Library/Application Support/Next/chat.sqlite3` with owner-only permissions. **Clear chat history** removes them from this Mac, but leaves already-created Todoist tasks untouched. The latest 12 messages are used as AI context. Progress previews remain in memory for 30 minutes; they are not saved as chat messages. There is no calendar integration, public deployment, or background AI activity.
 
 ## Run on your Mac
 

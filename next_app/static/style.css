@@ -151,3 +151,10 @@ legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.task-progress { margin-top: 1rem; display: grid; gap: .8rem; }
+.progress-form, .progress-confirm-form, .progress-preview { display: grid; gap: .65rem; }
+.progress-form textarea, .progress-confirm-form textarea, .progress-confirm-form input[type="text"],
+.progress-new-task input[type="text"] { width: 100%; box-sizing: border-box; }
+.progress-form label, .progress-confirm-form label { display: grid; gap: .3rem; }
+.progress-new-task { display: grid; gap: .5rem; padding: .7rem; border: 1px solid var(--line, #ddd); border-radius: .5rem; }
+.complete-button, .progress-button { justify-self: start; }

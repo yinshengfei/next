@@ -15,8 +15,8 @@ from . import ai
 from .candidates import select_candidates
 from .chat_store import ChatStore
 from .config import Settings, SetupError, get_secret, load_settings
-from .models import ChatRequest, ConfirmDraftsRequest, EasierRequest, RecommendationRequest
-from .todoist import ServiceError, TodoistWriteError, create_task, fetch_projects, fetch_tasks
+from .models import ChatRequest, ConfirmDraftsRequest, EasierRequest, ProgressConfirm, ProgressRequest, RecommendationAction, RecommendationRequest
+from .todoist import ServiceError, TodoistWriteError, create_task, fetch_projects, fetch_tasks, write_existing_task
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -42,6 +42,13 @@ def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     # Only the latest three task snapshots live in memory. No local task database.
     suggestions = {}
+    progress_proposals = {}
+
+    def suggested_task(recommendation_id):
+        saved = suggestions.get(recommendation_id)
+        if saved is None or time.monotonic() - saved[2] > 1800:
+            raise ServiceError("This suggestion has expired. Find your next action again.", 409)
+        return saved[0]
 
     @app.middleware("http")
     async def local_requests(request: Request, call_next):
@@ -204,6 +211,73 @@ def create_app(settings: Settings = None, chat_path: Path = None) -> FastAPI:
             key = await asyncio.to_thread(get_secret, settings.ai_key_account)
             result = await ai.make_easier(settings, key, saved[0], saved[1], body)
             return result.model_dump()
+
+    @app.post("/api/recommend/complete")
+    async def complete_recommendation(body: RecommendationAction):
+        task = suggested_task(body.recommendation_id)
+        token = await asyncio.to_thread(get_secret, "todoist")
+        active = {item.id for item in await fetch_tasks(token)}
+        if task.id not in active:
+            raise ServiceError("This task is no longer active. Refresh recommendations.", 409)
+        suggestions.pop(body.recommendation_id, None)
+        await write_existing_task(token, task.id, complete=True)
+        return {"completed": True, "task_id": task.id}
+
+    @app.post("/api/recommend/progress")
+    async def propose_progress(body: ProgressRequest):
+        task = suggested_task(body.recommendation_id)
+        if app.state.ai_lock.locked():
+            raise ServiceError("Another AI request is running. Please wait.", 429)
+        async with app.state.ai_lock:
+            key = await asyncio.to_thread(get_secret, settings.ai_key_account)
+            plan = await ai.plan_progress(settings, key, task, body.progress.strip())
+            if any(draft.project_id not in (None, task.project_id) for draft in plan.new_tasks):
+                raise ServiceError("The AI selected an unrelated project. Please try again.")
+            proposal_id = uuid4().hex
+            progress_proposals[proposal_id] = (task, plan, time.monotonic())
+            return {"proposal_id": proposal_id, **plan.model_dump(), "task_name": task.name,
+                    "current_description": task.description}
+
+    @app.post("/api/recommend/progress/confirm")
+    async def confirm_progress(body: ProgressConfirm):
+        saved = progress_proposals.get(body.proposal_id)
+        if saved is None or time.monotonic() - saved[2] > 1800:
+            raise ServiceError("This progress preview expired. Describe your progress again.", 409)
+        task, _, _ = saved
+        token = await asyncio.to_thread(get_secret, "todoist")
+        active = {item.id: item for item in await fetch_tasks(token)}
+        current = active.get(task.id)
+        if current is None:
+            raise ServiceError("This task is no longer active. Refresh recommendations.", 409)
+        if current.name != task.name or current.description != task.description:
+            raise ServiceError("This task changed in Todoist. Refresh and review it again.", 409)
+        allowed_projects = {item["id"] for item in await fetch_projects(token)}
+        for draft in body.new_tasks:
+            if draft.project_id is not None and draft.project_id not in allowed_projects:
+                raise ServiceError("Choose an existing Todoist project or Inbox.", 422)
+            if draft.due_date:
+                try:
+                    date.fromisoformat(draft.due_date)
+                except ValueError:
+                    raise ServiceError("Use a real due date in YYYY-MM-DD format.", 422) from None
+        progress_proposals.pop(body.proposal_id, None)
+        changes = {}
+        if body.updated_title is not None and body.updated_title.strip() != task.name:
+            changes["content"] = body.updated_title.strip()
+        if body.updated_description is not None and body.updated_description != task.description:
+            changes["description"] = body.updated_description
+        created = []
+        try:
+            if changes:
+                await write_existing_task(token, task.id, payload=changes)
+            for draft in body.new_tasks:
+                created.append(await create_task(token, draft.model_dump(exclude_none=True)))
+            if body.complete:
+                await write_existing_task(token, task.id, complete=True)
+        except TodoistWriteError as exc:
+            raise ServiceError("Some progress changes may already be saved in Todoist. Check the task "
+                               "and any new tasks before trying again. " + str(exc), exc.status_code) from None
+        return {"updated": bool(changes), "completed": body.complete, "created_task_ids": created}
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

@@ -77,6 +77,30 @@ class EasierRequest(Preferences):
     recommendation_id: str = Field(min_length=1, max_length=100)
 
 
+class RecommendationAction(StrictModel):
+    recommendation_id: str = Field(min_length=1, max_length=100)
+
+
+class ProgressRequest(RecommendationAction):
+    progress: str = Field(min_length=1, max_length=3000)
+
+
+class ProgressPlan(StrictModel):
+    reply: str = Field(min_length=1, max_length=1000)
+    updated_title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    updated_description: Optional[str] = Field(default=None, max_length=3000)
+    complete: bool = False
+    new_tasks: List["TaskDraft"] = Field(default_factory=list, max_length=5)
+
+
+class ProgressConfirm(StrictModel):
+    proposal_id: str = Field(min_length=1, max_length=100)
+    updated_title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    updated_description: Optional[str] = Field(default=None, max_length=3000)
+    complete: bool = False
+    new_tasks: List["TaskDraft"] = Field(default_factory=list, max_length=5)
+
+
 class TaskDraft(StrictModel):
     content: str = Field(min_length=1, max_length=500)
     description: str = Field(default="", max_length=3000)

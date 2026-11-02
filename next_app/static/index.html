@@ -124,6 +124,16 @@
       <div class="assumptions" hidden><span class="step-label">ASSUMPTIONS</span><ul></ul></div>
       <button type="button" class="easier-button">✧ Make It Easier</button>
       <div class="breakdown" aria-live="polite" hidden></div>
+      <div class="task-progress">
+        <button type="button" class="complete-button">✓ Mark task complete</button>
+        <form class="progress-form">
+          <label>Describe progress or newly discovered work
+            <textarea class="progress-input" rows="2" maxlength="3000" placeholder="What did you finish? What remains or changed?" required></textarea>
+          </label>
+          <button type="submit" class="progress-button">Review AI updates</button>
+        </form>
+        <div class="progress-preview" hidden></div>
+      </div>
     </article>
   </template>
 </body>

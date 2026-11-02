@@ -98,6 +98,78 @@ function addAssumptions(container, assumptions) {
   container.append(wrapper);
 }
 
+function previewProgress(card, article, plan) {
+  const panel = $(".progress-preview", article);
+  panel.replaceChildren(node("p", plan.reply));
+  const form = node("form", undefined, "progress-confirm-form");
+  const title = document.createElement("input");
+  title.type = "text"; title.maxLength = 500; title.value = plan.updated_title ?? card.task_name;
+  form.append(labeledField("Task title", title));
+  const description = document.createElement("textarea");
+  description.rows = 3; description.maxLength = 3000;
+  description.value = plan.updated_description ?? plan.current_description ?? "";
+  form.append(labeledField("Updated task description", description));
+  const complete = document.createElement("input");
+  complete.type = "checkbox"; complete.checked = plan.complete;
+  form.append(labeledField("Mark the whole task complete", complete));
+  const newRows = [];
+  plan.new_tasks.forEach((draft) => {
+    const row = node("div", undefined, "progress-new-task");
+    const selected = document.createElement("input"); selected.type = "checkbox"; selected.checked = true;
+    const name = document.createElement("input"); name.type = "text"; name.maxLength = 500; name.value = draft.content;
+    const due = document.createElement("input"); due.type = "date"; due.value = draft.due_date || "";
+    row.append(labeledField("Create new task", selected), labeledField("Title", name), labeledField("Due", due));
+    form.append(row);
+    newRows.push({ selected, name, due, draft });
+  });
+  const submit = node("button", "Confirm changes in Todoist", "primary-button");
+  submit.type = "submit"; form.append(submit); panel.append(form); panel.hidden = false;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); if (busy) return;
+    const tasks = newRows.filter((row) => row.selected.checked).map((row) => ({
+      ...row.draft, content: row.name.value.trim(), due_date: row.due.value || null,
+    }));
+    if (tasks.some((task) => !task.content) || !title.value.trim()) return showError("Every selected task needs a title.");
+    setBusy(true); $("#error").hidden = true;
+    try {
+      const result = await post("/api/recommend/progress/confirm", {
+        proposal_id: plan.proposal_id,
+        updated_title: title.value.trim() === card.task_name ? null : title.value.trim(),
+        updated_description: description.value === (plan.current_description ?? "") ? null : description.value,
+        complete: complete.checked, new_tasks: tasks,
+      }, 180000);
+      if (result.completed) article.replaceWith(node("p", `Completed in Todoist: ${card.task_name}`, "status"));
+      else panel.replaceChildren(node("p", `Saved to Todoist. ${result.created_task_ids.length} new task(s) created.`));
+      $("#status").textContent = "Progress saved. Find a new action to refresh the list.";
+    } catch (error) { showError(error.message); }
+    finally { setBusy(false); }
+  });
+}
+
+async function describeProgress(card, article, event) {
+  event.preventDefault(); if (busy) return;
+  const progress = $(".progress-input", article).value.trim();
+  if (!progress) return;
+  setBusy(true); $("#error").hidden = true;
+  $("#status").textContent = "Preparing changes for your review…";
+  try {
+    const plan = await post("/api/recommend/progress", { recommendation_id: card.recommendation_id, progress });
+    previewProgress(card, article, plan); $("#status").textContent = "Review the changes before saving.";
+  } catch (error) { showError(error.message); }
+  finally { setBusy(false); }
+}
+
+async function completeCard(card, article) {
+  if (busy) return;
+  setBusy(true); $("#error").hidden = true;
+  try {
+    await post("/api/recommend/complete", { recommendation_id: card.recommendation_id });
+    article.replaceWith(node("p", `Completed in Todoist: ${card.task_name}`, "status"));
+    $("#status").textContent = "Task completed. Find a new action to refresh recommendations.";
+  } catch (error) { showError(error.message); }
+  finally { setBusy(false); }
+}
+
 function renderCard(card) {
   const fragment = $("#recommendation-template").content.cloneNode(true);
   const article = $("article", fragment);
@@ -119,6 +191,8 @@ function renderCard(card) {
     card.assumptions.forEach((text) => $("ul", assumptions).append(node("li", text)));
   }
   $(".easier-button", article).addEventListener("click", () => simplify(card, article));
+  $(".complete-button", article).addEventListener("click", () => completeCard(card, article));
+  $(".progress-form", article).addEventListener("submit", (event) => describeProgress(card, article, event));
   return fragment;
 }
 

@@ -14,7 +14,7 @@ from openai import (
 from pydantic import BaseModel, ValidationError
 
 from .config import OPENAI_BASE_URL, Settings
-from .models import AIBreakdown, AIChatReply, AIRecommendations, Preferences, SuggestedAction, Task
+from .models import AIBreakdown, AIChatReply, AIRecommendations, Preferences, ProgressPlan, SuggestedAction, Task
 from .todoist import ServiceError
 
 
@@ -190,3 +190,24 @@ async def make_easier(
     if sum(step.estimated_minutes for step in result.steps) > preferences.minutes:
         raise ServiceError("The suggested steps exceeded your available time. Please try again.")
     return result
+
+
+async def plan_progress(settings: Settings, key: str, task: Task, progress: str) -> ProgressPlan:
+    return await structured_call(
+        settings, key,
+        {"task": task.ai_data(), "task_project_id": task.project_id,
+         "full_description": task.description[:2500],
+         "user_progress": progress, "local_time": datetime.now().astimezone().isoformat(timespec="minutes"),
+         "response_language": settings.language},
+        ProgressPlan,
+        "Interpret the user's progress for this one existing Todoist task. Propose changes for review; "
+        "you cannot write to Todoist yourself. Set complete=true only if the user clearly says the "
+        "whole task is finished. If partly done, leave complete=false. Use updated_title only when "
+        "the task's scope or name really changed. Use updated_description to preserve useful "
+        "progress and remaining work, keeping relevant existing description facts. Do not invent "
+        "completion or deadlines. If the user discovered separate actionable work, propose up to "
+        "five new task drafts. Do not duplicate the existing task. Use null project_id for Inbox "
+        "or the existing task's project ID; Todoist priority 4 is P1 and 1 is P4. "
+        "Reply briefly in response_language.",
+        max_output_tokens=3000,
+    )

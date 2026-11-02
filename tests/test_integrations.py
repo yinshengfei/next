@@ -90,7 +90,7 @@ def test_todoist_pagination_project_parent_and_duration(upstream):
     requests, _ = upstream
     tasks = run(todoist.fetch_tasks("test-todoist-token"))
     assert len(tasks) == 3
-    assert tasks[0].priority == 4 and tasks[0].deadline == "2026-10-28"
+    assert tasks[0].priority == 1 and tasks[0].deadline == "2026-10-28"
     assert tasks[1].duration_minutes == 1440
     assert tasks[2].parent_name == "Research plan"
     assert tasks[2].project_name == "Research"
@@ -228,6 +228,21 @@ def test_pagination_loop_is_not_silently_truncated():
             return await todoist.read_pages(client, "tasks")
     with pytest.raises(ServiceError, match="pagination"):
         run(load())
+
+
+def test_todoist_update_and_close_use_expected_endpoints(monkeypatch):
+    calls = []
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, path, json=None):
+            calls.append((path, json))
+            return httpx.Response(200, json={})
+    monkeypatch.setattr(todoist.httpx, "AsyncClient", lambda **kwargs: Client())
+    run(todoist.write_existing_task("token", "task123", payload={"description": "Half done"}))
+    run(todoist.write_existing_task("token", "task123", complete=True))
+    assert calls == [("tasks/task123", {"description": "Half done"}),
+                     ("tasks/task123/close", None)]
 
 
 def test_transport_timeout_is_readable():

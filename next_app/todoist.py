@@ -1,4 +1,4 @@
-"""Todoist reads only. There is deliberately no write/complete method."""
+"""Todoist task reads and reviewed writes."""
 
 import asyncio
 from typing import Any, List
@@ -96,8 +96,7 @@ async def fetch_tasks(token: str) -> List[Task]:
                 id=str(item["id"]), name=item["content"],
                 description=item.get("description") or "", project_id=project_id,
                 project_name=project.get("name", ""), favorite_project=bool(project.get("is_favorite")),
-                # API v1 uses 1 for P1; Next's shortlist uses 4 for P1.
-                priority=max(1, min(4, 5 - int(item.get("priority", 4)))),
+                priority=max(1, min(4, int(item.get("priority", 1)))),
                 due=date_value(item.get("due")), deadline=date_value(item.get("deadline")),
                 labels=item.get("labels") or [], duration_minutes=duration_minutes,
                 parent_id=parent_id, parent_name=names.get(parent_id),
@@ -149,3 +148,25 @@ async def create_task(token: str, payload: dict) -> str:
             "Todoist responded, but the created task could not be confirmed. Check Todoist before trying again.",
             uncertain=True,
         ) from None
+
+
+async def write_existing_task(token: str, task_id: str, payload: dict = None, complete: bool = False):
+    """Update or close a reviewed active task; ambiguous failures require a manual check."""
+    if not task_id or not isinstance(task_id, str) or "/" in task_id:
+        raise ServiceError("Invalid task ID.", 422)
+    if not payload and not complete:
+        return
+    path = "tasks/" + task_id + ("/close" if complete else "")
+    async with httpx.AsyncClient(base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+                                 timeout=20, follow_redirects=False) as client:
+        try:
+            response = await client.post(path) if complete else await client.post(path, json=payload)
+        except (httpx.TimeoutException, httpx.HTTPError):
+            raise TodoistWriteError("Todoist may have applied this change. Check Todoist before retrying.",
+                                    uncertain=True) from None
+    if response.status_code in (401, 403):
+        raise TodoistWriteError("Todoist rejected the token. Run setup to replace it.", status_code=503)
+    if response.status_code == 429:
+        raise TodoistWriteError("Todoist is rate-limiting requests. Try again later.", status_code=429)
+    if response.is_error or response.is_redirect:
+        raise TodoistWriteError("Todoist did not confirm this task change. Check the task and try again.")

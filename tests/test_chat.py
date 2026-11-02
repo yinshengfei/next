@@ -40,6 +40,73 @@ def setup_client(monkeypatch, tmp_path, reply):
     return TestClient(app_module.create_app(Settings(), chat_path=path), base_url="http://127.0.0.1:8765"), path
 
 
+def test_recommended_task_can_be_completed_once(monkeypatch, tmp_path):
+    from next_app.models import AIRecommendations
+    async def tasks(token):
+        return [Task(id="t1", name="Write draft")]
+    async def recommend(settings, key, candidates, body):
+        return AIRecommendations.model_validate({"recommendations": [{
+            "task_id": "t1", "action": "Open draft", "estimated_minutes": 10,
+            "why": "Due soon", "first_step": "Open file", "assumptions": [],
+        }]})
+    writes = []
+    async def write(token, task_id, payload=None, complete=False):
+        writes.append((task_id, payload, complete))
+    monkeypatch.setattr(app_module, "get_secret", lambda account: "secret")
+    monkeypatch.setattr(app_module, "fetch_tasks", tasks)
+    monkeypatch.setattr(app_module.ai, "recommend", recommend)
+    monkeypatch.setattr(app_module, "write_existing_task", write)
+    with TestClient(app_module.create_app(Settings(), chat_path=tmp_path / "chat.db"), base_url="http://127.0.0.1:8765") as client:
+        card = client.post("/api/recommend", headers=HEADERS, json={"minutes": 30, "energy": "medium"}).json()["recommendations"][0]
+        body = {"recommendation_id": card["recommendation_id"]}
+        assert client.post("/api/recommend/complete", headers=HEADERS, json=body).json()["completed"]
+        assert client.post("/api/recommend/complete", headers=HEADERS, json=body).status_code == 409
+    assert writes == [("t1", None, True)]
+
+
+def test_progress_needs_confirmation_and_updates_existing_task(monkeypatch, tmp_path):
+    from next_app.models import AIRecommendations, ProgressPlan
+    async def tasks(token):
+        return [Task(id="t1", name="Write draft", description="Outline ready", project_id="p1")]
+    async def recommend(settings, key, candidates, body):
+        return AIRecommendations.model_validate({"recommendations": [{
+            "task_id": "t1", "action": "Open draft", "estimated_minutes": 10,
+            "why": "Useful", "first_step": "Open file", "assumptions": [],
+        }]})
+    async def progress(settings, key, task, text):
+        assert text == "Half done; need a figure"
+        return ProgressPlan(reply="Review changes", updated_description="Outline ready. Half done.",
+                            new_tasks=[{"content": "Make figure", "priority": 1}])
+    writes = []
+    async def write(token, task_id, payload=None, complete=False):
+        writes.append(("update", task_id, payload, complete))
+    async def create(token, payload):
+        writes.append(("create", payload))
+        return "new-id"
+    async def projects(token):
+        return PROJECTS
+    monkeypatch.setattr(app_module, "get_secret", lambda account: "secret")
+    monkeypatch.setattr(app_module, "fetch_tasks", tasks)
+    monkeypatch.setattr(app_module, "fetch_projects", projects)
+    monkeypatch.setattr(app_module.ai, "recommend", recommend)
+    monkeypatch.setattr(app_module.ai, "plan_progress", progress)
+    monkeypatch.setattr(app_module, "write_existing_task", write)
+    monkeypatch.setattr(app_module, "create_task", create)
+    with TestClient(app_module.create_app(Settings(), chat_path=tmp_path / "chat.db"), base_url="http://127.0.0.1:8765") as client:
+        card = client.post("/api/recommend", headers=HEADERS, json={"minutes": 30, "energy": "medium"}).json()["recommendations"][0]
+        proposal = client.post("/api/recommend/progress", headers=HEADERS, json={
+            "recommendation_id": card["recommendation_id"], "progress": "Half done; need a figure",
+        }).json()
+        assert not writes
+        body = {"proposal_id": proposal["proposal_id"], "updated_description": proposal["updated_description"],
+                "new_tasks": proposal["new_tasks"], "complete": False}
+        result = client.post("/api/recommend/progress/confirm", headers=HEADERS, json=body)
+        assert result.status_code == 200 and result.json()["created_task_ids"] == ["new-id"]
+        assert client.post("/api/recommend/progress/confirm", headers=HEADERS, json=body).status_code == 409
+    assert writes == [("update", "t1", {"description": "Outline ready. Half done."}, False),
+                      ("create", {"content": "Make figure", "description": "", "priority": 1})]
+
+
 def test_chat_is_persistent_and_does_not_write_before_confirmation(monkeypatch, tmp_path):
     client, path = setup_client(monkeypatch, tmp_path, {
         "reply": "Here are two tasks for review.",
