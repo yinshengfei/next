@@ -13,6 +13,17 @@ let overviewLoading = false;
 let overviewSelected = "today";
 let overviewUpdatePending = false;
 let overviewUpdateTimer = null;
+let overviewData = null;
+const chatTimezoneSelect = $("#chat-timezone");
+const savedChatTimezone = localStorage.getItem("next-chat-timezone");
+if (["America/Los_Angeles", "Asia/Shanghai"].includes(savedChatTimezone)) chatTimezoneSelect.value = savedChatTimezone;
+const chatTimezone = () => chatTimezoneSelect.value;
+const chatTimezoneLabel = () => chatTimezone() === "Asia/Shanghai" ? "上海时间" : "洛杉矶时间";
+chatTimezoneSelect.addEventListener("change", () => {
+  localStorage.setItem("next-chat-timezone", chatTimezone());
+  refreshChat().catch((error) => showChatError(error.message));
+  if (overviewData) showOverview(overviewData);
+});
 
 function scheduleOverviewUpdate() {
   overviewUpdatePending = true;
@@ -30,14 +41,95 @@ function renderOverviewTask(task, finished) {
   link.href = `https://app.todoist.com/app/task/${encodeURIComponent(task.id)}`;
   link.target = "_blank"; link.rel = "noopener noreferrer";
   row.append(link);
-  const date = task.completed_at ? `Finished ${task.completed_at.slice(0, 10)}`
-    : task.deadline ? `Deadline ${task.deadline}` : task.due ? `Due ${task.due}` : "No date";
+  const date = task.completed_at ? `完成于 ${task.completed_at.slice(0, 10)}`
+    : [`安排 ${task.due || "未设置"}`, `截止 ${task.deadline || "未设置"}`].join(" · ");
   row.append(node("span", date, "overview-task-date"));
+  if (!finished) {
+    const details = [`P${5 - task.priority}`, task.duration_minutes ? `${task.duration_minutes} 分钟` : null, task.project || "Inbox"].filter(Boolean);
+    row.append(node("span", details.join(" · "), "overview-task-date"));
+    const edit = node("button", "编辑", "text-button overview-edit");
+    edit.type = "button";
+    edit.addEventListener("click", () => openOverviewDialog(task));
+    row.append(edit);
+  }
   if (task.description) row.append(node("p", task.description, "overview-recorded"));
   else if (!finished) row.append(node("p", "Progress not recorded in Todoist", "overview-unrecorded"));
   if (task.attention) row.append(node("p", `Note · ${task.attention}`, "overview-attention"));
   return row;
 }
+
+let editingOverviewTask = null;
+const overviewDialog = $("#overview-dialog");
+const overviewTaskForm = $("#overview-task-form");
+
+async function openOverviewDialog(task = null) {
+  editingOverviewTask = task;
+  overviewTaskForm.reset();
+  $("#overview-dialog-error").hidden = true;
+  $("#overview-dialog-title").textContent = task ? "编辑事项" : "新建事项";
+  $("#overview-delete").hidden = !task;
+  const projectSelect = overviewTaskForm.elements.project_id;
+  if (!projectOptions.length) {
+    try { await loadProjects(); } catch (error) { showError(error.message); return; }
+  }
+  projectSelect.replaceChildren(new Option("Inbox", ""), ...projectOptions.map((project) => new Option(project.name, project.id)));
+  if (task) {
+    overviewTaskForm.elements.content.value = task.name;
+    overviewTaskForm.elements.description.value = task.description || "";
+    overviewTaskForm.elements.due_date.value = task.due?.slice(0, 10) || "";
+    overviewTaskForm.elements.deadline_date.value = task.deadline?.slice(0, 10) || "";
+    overviewTaskForm.elements.duration_minutes.value = task.duration_minutes || "";
+    overviewTaskForm.elements.priority.value = String(task.priority);
+    projectSelect.value = task.project_id || "";
+  }
+  overviewDialog.showModal();
+  overviewTaskForm.elements.content.focus();
+}
+
+function overviewFormPayload() {
+  const fields = overviewTaskForm.elements;
+  return { content: fields.content.value.trim(), description: fields.description.value,
+    project_id: fields.project_id.value || null, due_date: fields.due_date.value || null,
+    deadline_date: fields.deadline_date.value || null, priority: Number(fields.priority.value),
+    duration_minutes: fields.duration_minutes.value ? Number(fields.duration_minutes.value) : null };
+}
+
+function overviewDialogError(message) {
+  $("#overview-dialog-error").textContent = message;
+  $("#overview-dialog-error").hidden = false;
+}
+
+$("#overview-add").addEventListener("click", () => openOverviewDialog());
+$("#overview-cancel").addEventListener("click", () => overviewDialog.close());
+overviewTaskForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!overviewTaskForm.reportValidity()) return;
+  const payload = overviewFormPayload();
+  if (payload.due_date && payload.deadline_date && payload.due_date > payload.deadline_date) {
+    overviewDialogError("安排日期不能晚于截止日期。"); return;
+  }
+  const submit = overviewTaskForm.querySelector('[type="submit"]');
+  submit.disabled = true;
+  try {
+    if (editingOverviewTask) await post(`/api/overview/task/${encodeURIComponent(editingOverviewTask.id)}/edit`,
+      { ...payload, expected: editingOverviewTask.snapshot });
+    else await post("/api/overview/task", payload);
+    overviewDialog.close();
+    if (overviewLoading) scheduleOverviewUpdate(); else await loadOverview(true);
+  } catch (error) { overviewDialogError(error.message); }
+  finally { submit.disabled = false; }
+});
+$("#overview-delete").addEventListener("click", async () => {
+  const task = editingOverviewTask;
+  if (!task || !window.confirm(`确定从 Todoist 删除“${task.name}”？`)) return;
+  $("#overview-delete").disabled = true;
+  try {
+    await post(`/api/overview/task/${encodeURIComponent(task.id)}/delete`, task.snapshot);
+    overviewDialog.close();
+    if (overviewLoading) scheduleOverviewUpdate(); else await loadOverview(true);
+  } catch (error) { overviewDialogError(error.message); }
+  finally { $("#overview-delete").disabled = false; }
+});
 
 function renderOverviewSection(section) {
   const wrapper = node("section", undefined, "overview-section");
@@ -77,6 +169,7 @@ function renderOverviewSection(section) {
 }
 
 function showOverview(data) {
+  overviewData = data;
   $("#overview-sections").replaceChildren(...data.sections.map(renderOverviewSection));
   const buttons = data.sections.map((section) => {
     const button = node("button", `${section.title} · ${section.count}`, "choice");
@@ -91,7 +184,7 @@ function showOverview(data) {
   });
   $("#overview-views").replaceChildren(...buttons);
   const since = data.history_since ? `完成记录自 ${data.history_since}` : "完成历史尚未同步";
-  const syncTime = data.last_sync ? new Date(data.last_sync).toLocaleString() : "尚未同步";
+  const syncTime = data.last_sync ? new Date(data.last_sync).toLocaleString("zh-CN", { timeZone: chatTimezone() }) : "尚未同步";
   $("#overview-meta").textContent = `${data.active_count} 条未完成待办 · ${since} · 进度条按待办数量计算，不代表工作量百分比 · 最后同步 ${syncTime}`;
   if (data.layout_mode !== "ai" && data.active_count) {
     $("#overview-error").textContent = "AI 分组尚未完成。下方保留全部待办，已通过校验的分组会在修复完成后更新。";
@@ -432,9 +525,9 @@ loadOverview();
 function renderMessage(message) {
   const article = node("article", undefined, `chat-message ${message.role}`);
   article.append(node("span", message.role === "user" ? "You" : "Next", "step-label"));
-  const time = node("time", new Intl.DateTimeFormat("zh-CN", { timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at)), "message-time");
+  const time = node("time", new Intl.DateTimeFormat("zh-CN", { timeZone: chatTimezone(), hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at)), "message-time");
   time.dateTime = message.created_at;
-  time.title = `${message.created_at} · 洛杉矶时间`;
+  time.title = `${new Date(message.created_at).toLocaleString("zh-CN", { timeZone: chatTimezone() })} · ${chatTimezoneLabel()}`;
   article.append(time);
   article.append(node("p", message.content));
   return article;
@@ -459,8 +552,8 @@ async function decideActions(actions, decision = "confirm") {
         if (decision === "cancel") {
           await post("/api/chat/draft/cancel", { id: action.id, decision: "cancel" });
         } else {
-          const { id, content, description, project_id, due_date, priority } = action;
-          const result = await post("/api/chat/confirm", { drafts: [{ id, content, description, project_id, due_date, priority }] });
+          const { id, content, description, project_id, due_date, deadline_date, duration_minutes, priority } = action;
+          const result = await post("/api/chat/confirm", { drafts: [{ id, content, description, project_id, due_date, deadline_date, duration_minutes, priority }] });
           if (result.results[0].state !== "created") throw new Error(result.results[0].message || "新建未确认，请检查事项状态。");
         }
       } else {
@@ -483,6 +576,7 @@ function renderChatAction(action) {
     reason: action.description || "新建待办", changes: {}, state: action.state === "created" ? "applied" : action.state };
   const row = node("article", undefined, "action-row");
   const details = node("details", undefined, "action-detail");
+  details.open = action.state === "pending";
   const summary = node("summary");
   summary.append(node("span", action.operation === "complete" ? "完成" : action.operation === "create" ? "新建" : "修改", "action-tag"), node("span", action.before.name, "action-name"));
   if (action.operation === "create") summary.append(node("span", action.due_date || "无日期 · All", "action-state"));
@@ -493,11 +587,27 @@ function renderChatAction(action) {
   link.href = `https://app.todoist.com/app/task/${encodeURIComponent(action.task_id)}`;
   link.target = "_blank"; link.rel = "noopener noreferrer";
   if (action.task_id) body.append(link);
-  if (action.operation === "create") body.append(node("p", `日期：${action.due_date || "未设置"} · P${5 - action.priority}`));
-  const fields = { content: ["标题", "name"], description: ["进度 / 说明", "description"], due_date: ["日期", "due"], priority: ["优先级", "priority"], due_string: ["日期", "due"] };
+  if (action.operation === "create") {
+    const project = projectOptions.find((item) => item.id === action.project_id)?.name || (action.project_id || "Inbox");
+    [["事项", action.content], ["安排日期", action.due_date || "未设置"],
+      ["截止日期", action.deadline_date || "未设置"], ["备注", action.description || "未设置"],
+      ["项目", project], ["优先级", `P${5 - action.priority}`],
+      ["预计时长", action.duration_minutes ? `${action.duration_minutes} 分钟` : "未设置"]]
+      .forEach(([label, value]) => body.append(node("p", `${label}：${value}`)));
+  }
+  const fields = { content: ["标题", "name"], description: ["备注", "description"], due_date: ["安排日期", "due"], deadline_date: ["截止日期", "deadline"], priority: ["优先级", "priority"], due_string: ["安排日期", "due"], duration: ["预计时长", "duration_minutes"] };
   if (action.operation === "complete") body.append(node("p", "未完成 → 已完成"));
+  if (action.operation !== "create") {
+    const before = action.before;
+    [["当前事项", before.name], ["当前安排日期", before.due || "未设置"],
+      ["当前截止日期", before.deadline || "未设置"], ["当前备注", before.description || "未设置"],
+      ["当前项目", before.project_name || "Inbox"], ["当前优先级", `P${5 - before.priority}`],
+      ["当前预计时长", before.duration_minutes ? `${before.duration_minutes} 分钟` : "未设置"]]
+      .forEach(([label, value]) => body.append(node("p", `${label}：${value}`)));
+  }
   Object.entries(action.changes).forEach(([key, value]) => {
-    const [label, source] = fields[key];
+    if (key === "duration_unit") return;
+    const [label, source] = fields[key] || [key, key];
     const before = key === "priority" ? `P${5 - action.before.priority}` : action.before[source] || "未设置";
     const after = key === "priority" ? `P${5 - value}` : key === "due_string" ? "无日期" : value || "清空";
     body.append(node("p", `${label}：${before} → ${after}`));
@@ -548,8 +658,8 @@ async function refreshChat() {
   const messages = $("#chat-messages");
   let previousHour = "";
   messages.replaceChildren(...data.messages.flatMap((message) => {
-    const hour = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at));
-    const separator = hour !== previousHour ? node("div", `${hour}:00 · 洛杉矶时间`, "chat-hour") : null;
+    const hour = new Intl.DateTimeFormat("sv-SE", { timeZone: chatTimezone(), year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).format(new Date(message.created_at));
+    const separator = hour !== previousHour ? node("div", `${hour}:00 · ${chatTimezoneLabel()}`, "chat-hour") : null;
     previousHour = hour;
     const item = renderMessage(message);
     const actions = [
@@ -584,10 +694,18 @@ $("#chat-form").addEventListener("submit", async (event) => {
   $("#chat-error").hidden = true;
   $("#chat-status").textContent = "Thinking and checking your Todoist tasks…";
   try {
-    await post("/api/chat", { message });
+    let legacyBackend = false;
+    try {
+      await post("/api/chat", { message, timezone: chatTimezone() });
+    } catch (error) {
+      // A running older backend rejects the newly added timezone field before saving the message.
+      if (error.message !== "Please check the submitted fields and try again.") throw error;
+      await post("/api/chat", { message });
+      legacyBackend = true;
+    }
     $("#chat-input").value = "";
     await refreshChat();
-    $("#chat-status").textContent = "";
+    $("#chat-status").textContent = legacyBackend ? "消息已发送；重启 Next 后 Chat 才会按所选时区理解日期。" : "";
   } catch (error) {
     showChatError(error.message);
   } finally {

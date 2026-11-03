@@ -240,3 +240,39 @@ async def write_existing_task(token: str, task_id: str, payload: dict = None, co
         raise TodoistWriteError("Todoist is rate-limiting requests. Try again later.", status_code=429)
     if response.is_error or response.is_redirect:
         raise TodoistWriteError("Todoist did not confirm this task change. Check the task and try again.")
+
+
+async def delete_task(token: str, task_id: str):
+    if not task_id or "/" in task_id:
+        raise ServiceError("Invalid task ID.", 422)
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy,
+        base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+        timeout=20, follow_redirects=False) as client:
+        try:
+            response = await client.delete("tasks/" + task_id)
+        except (httpx.TimeoutException, httpx.HTTPError):
+            raise TodoistWriteError("The delete result is uncertain. Check Todoist before trying again.", uncertain=True) from None
+    if response.status_code in (401, 403):
+        raise TodoistWriteError("Todoist rejected the token.", status_code=503)
+    if response.status_code == 429:
+        raise TodoistWriteError("Todoist is rate-limiting requests.", status_code=429)
+    if response.is_error or response.is_redirect:
+        raise TodoistWriteError("Todoist did not confirm deletion. Refresh and try again.")
+
+
+async def move_task(token: str, task_id: str, project_id: str):
+    if not task_id or "/" in task_id or not project_id or "/" in project_id:
+        raise ServiceError("Invalid task or project ID.", 422)
+    async with httpx.AsyncClient(trust_env=load_settings().todoist_use_environment_proxy,
+        base_url=BASE_URL, headers={"Authorization": "Bearer " + token},
+        timeout=20, follow_redirects=False) as client:
+        try:
+            response = await client.post("tasks/" + task_id + "/move", json={"project_id": project_id})
+        except (httpx.TimeoutException, httpx.HTTPError):
+            raise TodoistWriteError("The project move result is uncertain. Check Todoist.", uncertain=True) from None
+    if response.status_code in (401, 403):
+        raise TodoistWriteError("Todoist rejected the token.", status_code=503)
+    if response.status_code == 429:
+        raise TodoistWriteError("Todoist is rate-limiting requests.", status_code=429)
+    if response.is_error or response.is_redirect:
+        raise TodoistWriteError("Todoist did not confirm the project move. Refresh and try again.")

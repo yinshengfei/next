@@ -80,8 +80,27 @@ class OverviewStore:
         """A confirmed Todoist receipt is visible even before network reconciliation."""
         task = {"id": task_id, "name": payload["content"], "description": payload.get("description", ""),
                 "project_id": payload.get("project_id") or "", "project_name": "",
-                "due": payload.get("due_date"), "priority": payload.get("priority", 1)}
+                "due": payload.get("due_date"), "deadline": payload.get("deadline_date"),
+                "duration_minutes": payload.get("duration"), "priority": payload.get("priority", 1)}
         with self.connect() as db:
             db.execute("INSERT INTO active(id,payload) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
                        (task_id, json.dumps(task, ensure_ascii=False)))
+            db.execute("INSERT INTO meta(key,value) VALUES ('dirty','1') ON CONFLICT(key) DO UPDATE SET value='1'")
+
+    def record_updated_task(self, task_id, body, current):
+        with self.connect() as db:
+            row = db.execute("SELECT payload FROM active WHERE id=?", (task_id,)).fetchone()
+            if row:
+                task = json.loads(row["payload"])
+                due = current.due if body.due_date == (current.due[:10] if current.due else None) else body.due_date
+                task.update(name=body.content.strip(), description=body.description, due=due,
+                            deadline=body.deadline_date, duration_minutes=body.duration_minutes,
+                            priority=body.priority)
+                db.execute("UPDATE active SET payload=? WHERE id=?", (json.dumps(task, ensure_ascii=False), task_id))
+            db.execute("INSERT INTO meta(key,value) VALUES ('dirty','1') ON CONFLICT(key) DO UPDATE SET value='1'")
+
+    def remove_task(self, task_id):
+        with self.connect() as db:
+            db.execute("DELETE FROM active WHERE id=?", (task_id,))
+            db.execute("DELETE FROM layout WHERE id=?", ("open:" + task_id,))
             db.execute("INSERT INTO meta(key,value) VALUES ('dirty','1') ON CONFLICT(key) DO UPDATE SET value='1'")

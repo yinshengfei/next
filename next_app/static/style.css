@@ -112,6 +112,8 @@ legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
 .mode-tab[aria-current="page"] { color: var(--accent); background: var(--accent-light); border-color: #cbd9ca; font-weight: 600; }
 .chat-panel { padding-top: 35px; }
 .chat-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.chat-heading-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--muted); }
+.chat-heading-controls select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); }
 .chat-heading h1 { margin-top: 9px; }
 .chat-messages { display: grid; gap: 14px; min-height: 140px; max-height: 540px; overflow-y: auto; padding: 20px 0; margin: 22px 0 0; border-top: 1px solid var(--line); }
 .chat-messages:empty::before { content: "Tell me what you’re thinking about, or ask me to turn an idea into Todoist tasks."; align-self: center; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; padding: 30px; }
@@ -140,6 +142,8 @@ legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
   .draft-details { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 560px) {
+  .overview-form-grid { grid-template-columns: 1fr; }
+  .overview-heading { flex-wrap: wrap; }
   .shell { width: calc(100% - 36px); }
   .topbar { padding: 24px 0; }
   .intro { margin: 29px 0; }
@@ -164,6 +168,19 @@ legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
 .overview-panel { padding-top: 32px; }
 .overview-views { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
 .overview-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.overview-heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.overview-heading-actions .primary-button, .overview-dialog-actions .primary-button { display: inline-flex; padding: 9px 13px; font-size: 12px; }
+.overview-dialog { width: min(540px, calc(100% - 30px)); max-height: 85vh; overflow: auto; border: 1px solid var(--line); border-radius: 14px; padding: 24px; background: var(--paper); color: var(--ink); }
+.overview-dialog::backdrop { background: #17251b80; }
+.overview-dialog form, .overview-dialog label { display: grid; gap: 8px; }
+.overview-dialog form { gap: 16px; }
+.overview-dialog h2 { margin: 0; }
+.overview-dialog label { font-size: 12px; font-weight: 600; }
+.overview-dialog input, .overview-dialog textarea, .overview-dialog select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); }
+.overview-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.overview-dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 14px; }
+.overview-dialog-actions .danger { color: #a33f38; margin-right: auto; }
+.overview-edit { justify-self: start; padding: 2px 0; }
 .overview-heading h1 { margin: 8px 0; }
 .overview-section { margin: 32px 0 38px; }
 .overview-section-heading { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); margin-bottom: 14px; }

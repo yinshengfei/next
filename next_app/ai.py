@@ -5,6 +5,7 @@ import hashlib
 import re
 from datetime import datetime
 from typing import List, Type, TypeVar
+from zoneinfo import ZoneInfo
 
 import httpx
 from openai import (
@@ -15,7 +16,6 @@ from openai import (
 from pydantic import BaseModel, ValidationError
 
 from .config import OPENAI_BASE_URL, Settings
-from .chat_time import chat_now
 from .models import AIBreakdown, AIChatReply, AIRecommendations, OverviewArea, OverviewAudit, OverviewLayout, OverviewTaxonomy, OverviewWorkstream, Preferences, ProgressPlan, SuggestedAction, Task
 from .todoist import ServiceError
 
@@ -88,6 +88,7 @@ async def structured_call(
 
 async def chat(
     settings: Settings, key: str, history: list, tasks: List[Task], projects: list,
+    timezone_name: str = "America/Los_Angeles",
 ) -> AIChatReply:
     allowed_projects = {project["id"] for project in projects}
     latest_message = history[-1]["content"] if history else ""
@@ -98,8 +99,8 @@ async def chat(
     result = await structured_call(
         settings, key,
         {
-            "local_time": chat_now(),
-            "timezone": "America/Los_Angeles",
+            "local_time": datetime.now(ZoneInfo(timezone_name)).isoformat(timespec="seconds"),
+            "timezone": timezone_name,
             "response_language": settings.language,
             "conversation": history,
             "expected_draft_count": expected_draft_count,
@@ -132,12 +133,16 @@ async def chat(
         "can go straight to preview; otherwise continue the clarification dialogue across turns. "
         "For a new task with no stated date, ask whether the user wants a date or explicitly wants "
         "an undated task before returning a draft. Do not invent a due date or a hard deadline. "
+        "For each proposed task distinguish planned work date (due_date), hard deadline (deadline_date), "
+        "title (content), notes (description), project, priority and estimated duration in minutes. "
+        "Ask one focused question when the user's wording makes a required distinction unclear; "
+        "leave optional fields empty when unspecified. Do not invent a deadline or duration. "
         "If the user explicitly chooses no date, explain that it will appear in All, not dated views. "
         "For queries, distinguish facts in existing_tasks_sample from proposed operations: proposed "
         "is not executed. Do not claim creation/completion until a confirmation result says so. "
         "Each conversation message has its actual created_at timestamp. Interpret relative dates "
         "in historical messages relative to that message's timestamp, and the latest request "
-        "relative to its timestamp in America/Los_Angeles. local_time is the current request time. "
+        "relative to its timestamp in the supplied timezone. local_time is the current request time. "
         "For changes to existing tasks, return actions with operation update or complete and the exact "
         "provided task_id. Prefer updating an existing task's progress/description over splitting it "
         "into more tasks. Create a separate task only for an independently actionable deliverable "

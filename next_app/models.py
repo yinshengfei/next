@@ -164,6 +164,8 @@ class TaskDraft(StrictModel):
     description: str = Field(default="", max_length=3000)
     project_id: Optional[str] = Field(default=None, max_length=100)
     due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    deadline_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    duration_minutes: Optional[int] = Field(default=None, strict=True, ge=1, le=1440)
     priority: int = Field(default=1, strict=True, ge=1, le=4)  # Todoist API: 4 is P1, 1 is P4.
 
 
@@ -174,7 +176,11 @@ class ChatTaskAction(StrictModel):
     content: Optional[str] = Field(default=None, min_length=1, max_length=500)
     description: Optional[str] = Field(default=None, max_length=3000)
     due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    deadline_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     clear_due: bool = False
+    clear_deadline: bool = False
+    duration_minutes: Optional[int] = Field(default=None, strict=True, ge=1, le=1440)
+    clear_duration: bool = False
     priority: Optional[int] = Field(default=None, strict=True, ge=1, le=4)
 
 
@@ -194,6 +200,7 @@ class AIChatReply(StrictModel):
 
 class ChatRequest(StrictModel):
     message: str = Field(min_length=1, max_length=12000)
+    timezone: Literal["America/Los_Angeles", "Asia/Shanghai"] = "America/Los_Angeles"
 
 
 class ConfirmedDraft(StrictModel):
@@ -202,7 +209,23 @@ class ConfirmedDraft(StrictModel):
     description: str = Field(default="", max_length=3000)
     project_id: Optional[str] = Field(default=None, max_length=100)
     due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    deadline_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    duration_minutes: Optional[int] = Field(default=None, strict=True, ge=1, le=1440)
     priority: int = Field(default=1, strict=True, ge=1, le=4)
+
+
+class OverviewTaskInput(StrictModel):
+    content: str = Field(min_length=1, max_length=500)
+    description: str = Field(default="", max_length=3000)
+    project_id: Optional[str] = Field(default=None, max_length=100)
+    due_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    deadline_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    priority: int = Field(default=1, strict=True, ge=1, le=4)
+    duration_minutes: Optional[int] = Field(default=None, strict=True, ge=1, le=1440)
+
+
+class OverviewTaskEdit(OverviewTaskInput):
+    expected: Task
 
 
 class ConfirmDraftsRequest(StrictModel):

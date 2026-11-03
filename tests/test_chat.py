@@ -52,6 +52,26 @@ def test_confirmed_undated_task_immediately_visible_in_cached_all(monkeypatch, t
         assert next(v for v in overview["sections"] if v["key"] == "today")["count"] == 0
 
 
+def test_chat_confirm_passes_deadline_and_duration_to_todoist(monkeypatch, tmp_path):
+    client, _ = setup_client(monkeypatch, tmp_path, {"reply": "Review fields", "drafts": [{
+        "content": "Write report", "description": "Include figures", "project_id": "p1",
+        "due_date": "2026-11-04", "deadline_date": "2026-11-06",
+        "duration_minutes": 60, "priority": 3}]})
+    payloads = []
+    async def create(token, payload):
+        payloads.append(payload)
+        return "report-id"
+    monkeypatch.setattr(app_module, "create_task", create)
+    with client:
+        client.post("/api/chat", headers=HEADERS, json={"message": "Plan my day"})
+        draft = client.get("/api/chat/history").json()["drafts"][0]
+        body = {key: draft[key] for key in ("id", "content", "description", "project_id",
+            "due_date", "deadline_date", "duration_minutes", "priority")}
+        assert client.post("/api/chat/confirm", headers=HEADERS, json={"drafts": [body]}).status_code == 200
+    assert payloads[0]["deadline_date"] == "2026-11-06"
+    assert payloads[0]["duration"] == 60 and payloads[0]["duration_unit"] == "minute"
+
+
 def test_chat_time_preserves_old_utc_and_new_send_time(tmp_path):
     store = ChatStore(tmp_path / "chat.db")
     with store.connect() as db:
@@ -65,6 +85,21 @@ def test_chat_time_preserves_old_utc_and_new_send_time(tmp_path):
 def test_chat_time_uses_los_angeles_daylight_saving():
     assert chat_timestamp("2026-07-01T12:00:00Z") == "2026-07-01T05:00:00-07:00"
     assert chat_timestamp("2026-11-02T12:00:00Z") == "2026-11-02T04:00:00-08:00"
+
+
+def test_chat_request_accepts_only_supported_timezones():
+    assert ChatRequest(message="Hi", timezone="Asia/Shanghai").timezone == "Asia/Shanghai"
+    assert ChatRequest(message="Hi").timezone == "America/Los_Angeles"
+    with pytest.raises(ValueError):
+        ChatRequest(message="Hi", timezone="UTC")
+
+
+def test_chat_endpoint_accepts_selected_timezone(monkeypatch, tmp_path):
+    client, _ = setup_client(monkeypatch, tmp_path, {"phase": "answer", "reply": "OK"})
+    with client:
+        response = client.post("/api/chat", headers=HEADERS,
+                               json={"message": "Plan my day", "timezone": "Asia/Shanghai"})
+    assert response.status_code == 200
 
 
 def test_cancel_chat_creation_leaves_todoist_unchanged(monkeypatch, tmp_path):
@@ -136,7 +171,7 @@ def setup_client(monkeypatch, tmp_path, reply):
     async def projects(token):
         return PROJECTS
 
-    async def chat(settings, key, history, tasks, projects):
+    async def chat(settings, key, history, tasks, projects, timezone_name="America/Los_Angeles"):
         assert history[-1]["role"] == "user"
         assert history[-1]["content"] == "Plan my day"
         assert history[-1]["created_at"].endswith("-08:00")

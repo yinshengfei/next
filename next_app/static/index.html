@@ -27,7 +27,7 @@
       <div class="overview-heading">
         <div><p class="eyebrow">YOUR WORK AT A GLANCE</p><h1 id="overview-title">Overview</h1>
           <p class="subtitle">Workstreams arranged by AI. Every Todoist task is accounted for by Next.</p></div>
-        <button type="button" id="overview-refresh" class="text-button">Refresh Todoist</button>
+        <div class="overview-heading-actions"><button type="button" id="overview-add" class="primary-button">＋ 新建事项</button><button type="button" id="overview-refresh" class="text-button">Refresh Todoist</button></div>
       </div>
       <p id="overview-status" class="status" role="status"></p>
       <div id="overview-error" class="error" role="alert" hidden></div>
@@ -36,10 +36,35 @@
       <p id="overview-meta" class="hint"></p>
     </section>
 
+    <dialog id="overview-dialog" class="overview-dialog" aria-labelledby="overview-dialog-title">
+      <form id="overview-task-form">
+        <h2 id="overview-dialog-title">新建事项</h2>
+        <p class="hint">安排日期是计划做的日期；截止日期是最晚完成日期。仅标题必填。</p>
+        <label>事项标题<input name="content" required maxlength="500"></label>
+        <label>备注<textarea name="description" maxlength="3000" rows="3"></textarea></label>
+        <div class="overview-form-grid">
+          <label>安排日期<input name="due_date" type="date"></label>
+          <label>截止日期<input name="deadline_date" type="date"></label>
+          <label>预计时长（分钟）<input name="duration_minutes" type="number" min="1" max="1440"></label>
+          <label>优先级<select name="priority"><option value="1">P4 · 普通</option><option value="2">P3</option><option value="3">P2</option><option value="4">P1 · 最高</option></select></label>
+          <label>项目<select name="project_id"><option value="">Inbox</option></select></label>
+        </div>
+        <p id="overview-dialog-error" class="error" role="alert" hidden></p>
+        <div class="overview-dialog-actions"><button type="button" id="overview-delete" class="text-button danger" hidden>删除事项</button><button type="button" id="overview-cancel" class="text-button">取消</button><button type="submit" class="primary-button">保存到 Todoist</button></div>
+      </form>
+    </dialog>
+
     <section id="chat-panel" class="chat-panel" aria-labelledby="chat-title" hidden>
       <div class="chat-heading">
         <div><p class="eyebrow">YOUR WORKSPACE</p><h1 id="chat-title">一起理清下一步</h1></div>
-        <button type="button" id="clear-chat" class="text-button">Clear chat history</button>
+        <div class="chat-heading-controls">
+          <label for="chat-timezone">时区</label>
+          <select id="chat-timezone" aria-label="聊天时间时区">
+            <option value="America/Los_Angeles">洛杉矶</option>
+            <option value="Asia/Shanghai">上海</option>
+          </select>
+          <button type="button" id="clear-chat" class="text-button">Clear chat history</button>
+        </div>
       </div>
       <p class="subtitle">直接描述要新建、修改或完成的事项。AI 会生成操作卡片，只有点击 Confirm 后才会同步到 Todoist。</p>
       <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>

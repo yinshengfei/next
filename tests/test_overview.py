@@ -75,6 +75,75 @@ def test_overview_uses_cached_snapshot_and_layout(monkeypatch, tmp_path):
     assert first["sections"][2]["areas"][0]["workstreams"][0]["title"] == "Paper"
 
 
+def test_overview_task_create_edit_delete_roundtrip(monkeypatch, tmp_path):
+    tasks = {}
+    writes = []
+    async def fetch(token):
+        return list(tasks.values())
+    async def projects(token):
+        return [{"id": "p", "name": "Research"}]
+    async def create(token, payload):
+        writes.append(("create", payload.copy()))
+        tasks["t1"] = Task(id="t1", name=payload["content"], description=payload["description"],
+                           project_id="p", project_name="Research", due=payload.get("due_date"),
+                           deadline=payload.get("deadline_date"), priority=payload["priority"],
+                           duration_minutes=payload.get("duration"))
+        return "t1"
+    async def update(token, task_id, payload=None, complete=False):
+        writes.append(("edit", payload.copy()))
+        old = tasks[task_id]
+        tasks[task_id] = old.model_copy(update={"name": payload.get("content", old.name),
+            "description": payload.get("description", old.description),
+            "due": payload.get("due_date", old.due), "deadline": payload.get("deadline_date", old.deadline),
+            "priority": payload.get("priority", old.priority), "duration_minutes": payload.get("duration", old.duration_minutes)})
+    async def delete(token, task_id):
+        writes.append(("delete", task_id))
+        del tasks[task_id]
+    monkeypatch.setattr(app_module, "get_secret", lambda account: "secret")
+    monkeypatch.setattr(app_module, "fetch_tasks", fetch)
+    monkeypatch.setattr(app_module, "fetch_projects", projects)
+    monkeypatch.setattr(app_module, "create_task", create)
+    monkeypatch.setattr(app_module, "write_existing_task", update)
+    monkeypatch.setattr(app_module, "delete_task", delete)
+    payload = {"content": "Draft", "description": "Notes", "project_id": "p",
+               "due_date": "2026-11-04", "deadline_date": "2026-11-06",
+               "priority": 3, "duration_minutes": 45}
+    with TestClient(app_module.create_app(Settings(), overview_path=tmp_path / "overview.db"),
+                    base_url="http://127.0.0.1:8765") as client:
+        assert client.post("/api/overview/task", headers=HEADERS, json=payload).json()["id"] == "t1"
+        assert writes[0][1]["deadline_date"] == "2026-11-06"
+        assert writes[0][1]["duration"] == 45
+        assert client.get("/api/overview/cached").json()["active_count"] == 1
+        bad = {**payload, "due_date": "2026-11-07"}
+        assert client.post("/api/overview/task", headers=HEADERS, json=bad).status_code == 422
+        stale = {**payload, "content": "Revised", "expected": Task(id="t1", name="Old").model_dump()}
+        assert client.post("/api/overview/task/t1/edit", headers=HEADERS, json=stale).status_code == 409
+        edited = {**stale, "expected": tasks["t1"].model_dump()}
+        assert client.post("/api/overview/task/t1/edit", headers=HEADERS, json=edited).status_code == 200
+        assert client.get("/api/overview/cached").json()["sections"][2]["areas"][0]["workstreams"][0]["tasks"][0]["name"] == "Revised"
+        assert client.post("/api/overview/task/t1/delete", headers=HEADERS, json=tasks["t1"].model_dump()).status_code == 200
+        assert client.get("/api/overview/cached").json()["active_count"] == 0
+    assert [item[0] for item in writes] == ["create", "edit", "delete"]
+
+
+def test_overview_note_edit_preserves_scheduled_time(monkeypatch, tmp_path):
+    task = Task(id="timed", name="Meeting", due="2026-11-04T09:00:00", project_id="p")
+    writes = []
+    async def tasks(token): return [task]
+    async def projects(token): return [{"id": "p", "name": "Research"}]
+    async def update(token, task_id, payload=None, complete=False): writes.append(payload)
+    monkeypatch.setattr(app_module, "get_secret", lambda account: "secret")
+    monkeypatch.setattr(app_module, "fetch_tasks", tasks)
+    monkeypatch.setattr(app_module, "fetch_projects", projects)
+    monkeypatch.setattr(app_module, "write_existing_task", update)
+    with TestClient(app_module.create_app(Settings(), overview_path=tmp_path / "overview.db"),
+                    base_url="http://127.0.0.1:8765") as client:
+        body = {"content": "Meeting", "description": "Bring notes", "project_id": "p",
+                "due_date": "2026-11-04", "expected": task.model_dump()}
+        assert client.post("/api/overview/task/timed/edit", headers=HEADERS, json=body).status_code == 200
+    assert writes == [{"description": "Bring notes"}]
+
+
 def test_ai_layout_rejects_missing_or_duplicate_ids(monkeypatch):
     async def bad(*args, **kwargs):
         if len(args) >= 4 and args[3].__name__ == "OverviewTaxonomy":

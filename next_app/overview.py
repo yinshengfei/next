@@ -69,9 +69,12 @@ def build_overview(active, completed, layout, today: date = None, coverage_since
                 group["emphasis"] = "standard"
             group["tasks"].append({
                 "id": item["id"], "name": item.get("name", ""),
-                "description": item.get("description", "")[:1000],
+                "description": item.get("description", ""),
                 "project": item.get("project_name", ""), "due": item.get("due"),
                 "deadline": item.get("deadline"), "completed_at": item.get("completed_at"),
+                "priority": item.get("priority", 1), "duration_minutes": item.get("duration_minutes"),
+                "project_id": item.get("project_id", ""),
+                "snapshot": item if not item["finished"] else None,
                 "attention": placement.get("attention"), "order": placement.get("order", 10000),
             })
         ordered_areas = sorted(areas.values(), key=lambda area: (area["order"], area["title"]))

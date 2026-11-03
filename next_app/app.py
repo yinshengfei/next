@@ -20,8 +20,8 @@ from .chat_time import chat_now
 from .overview import build_overview
 from .overview_store import OverviewStore
 from .config import Settings, SetupError, get_secret, load_settings
-from .models import ChatActionDecision, ChatRequest, ConfirmDraftsRequest, EasierRequest, OverviewRequest, ProgressConfirm, ProgressRequest, RecommendationAction, RecommendationRequest
-from .todoist import ServiceError, TodoistWriteError, create_task, fetch_account_started, fetch_completed_range, fetch_projects, fetch_recent_completed, fetch_tasks, write_existing_task
+from .models import ChatActionDecision, ChatRequest, ConfirmDraftsRequest, EasierRequest, OverviewRequest, OverviewTaskInput, OverviewTaskEdit, ProgressConfirm, ProgressRequest, RecommendationAction, RecommendationRequest, Task
+from .todoist import ServiceError, TodoistWriteError, create_task, delete_task, move_task, fetch_account_started, fetch_completed_range, fetch_projects, fetch_recent_completed, fetch_tasks, write_existing_task
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -205,6 +205,83 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
                 "last_sync": cache.meta("last_sync"), "layout_mode": "ai" if layout else "fallback",
                 "sync_error": None}
 
+    async def overview_payload(body: OverviewTaskInput, token: str):
+        project_ids = {item["id"] for item in await fetch_projects(token)}
+        if body.project_id and body.project_id not in project_ids:
+            raise ServiceError("Choose an existing Todoist project or Inbox.", 422)
+        for value in (body.due_date, body.deadline_date):
+            if value:
+                try:
+                    date.fromisoformat(value)
+                except ValueError:
+                    raise ServiceError("Use a real date in YYYY-MM-DD format.", 422) from None
+        if body.due_date and body.deadline_date and body.due_date > body.deadline_date:
+            raise ServiceError("The planned date must not be after the deadline.", 422)
+        payload = {"content": body.content.strip(), "description": body.description,
+                   "priority": body.priority}
+        if not payload["content"]:
+            raise ServiceError("A task title cannot be blank.", 422)
+        if body.project_id: payload["project_id"] = body.project_id
+        if body.due_date: payload["due_date"] = body.due_date
+        if body.deadline_date: payload["deadline_date"] = body.deadline_date
+        if body.duration_minutes:
+            payload.update(duration=body.duration_minutes, duration_unit="minute")
+        return payload
+
+    @app.post("/api/overview/task")
+    async def create_overview_task(body: OverviewTaskInput):
+        token = await asyncio.to_thread(get_secret, "todoist")
+        payload = await overview_payload(body, token)
+        try:
+            task_id = await create_task(token, payload)
+        except TodoistWriteError as exc:
+            raise ServiceError(str(exc), exc.status_code) from None
+        overview_store().record_created_task(task_id, payload)
+        return {"id": task_id}
+
+    @app.post("/api/overview/task/{task_id}/edit")
+    async def edit_overview_task(task_id: str, body: OverviewTaskEdit):
+        token = await asyncio.to_thread(get_secret, "todoist")
+        current = next((task for task in await fetch_tasks(token) if task.id == task_id), None)
+        if current is None or current != body.expected:
+            raise ServiceError("This task changed in Todoist. Refresh Overview before editing.", 409)
+        await overview_payload(body, token)
+        payload = {}
+        if body.content.strip() != current.name: payload["content"] = body.content.strip()
+        if body.description != current.description: payload["description"] = body.description
+        if body.priority != current.priority: payload["priority"] = body.priority
+        if body.due_date != (current.due[:10] if current.due else None):
+            if body.due_date: payload["due_date"] = body.due_date
+            else: payload["due_string"] = "no date"
+        if body.deadline_date != current.deadline: payload["deadline_date"] = body.deadline_date
+        if body.duration_minutes != current.duration_minutes:
+            payload.update(duration=body.duration_minutes, duration_unit="minute" if body.duration_minutes else None)
+        move_to = body.project_id if body.project_id and body.project_id != current.project_id else None
+        if not body.project_id and current.project_id:
+            raise ServiceError("Choose a destination project before moving this task.", 422)
+        try:
+            if payload: await write_existing_task(token, task_id, payload)
+            if move_to: await move_task(token, task_id, move_to)
+        except TodoistWriteError as exc:
+            overview_store().invalidate()
+            raise ServiceError("Some changes may already be saved. Refresh Overview and check Todoist. " + str(exc), exc.status_code) from None
+        overview_store().record_updated_task(task_id, body, current)
+        return {"id": task_id}
+
+    @app.post("/api/overview/task/{task_id}/delete")
+    async def delete_overview_task(task_id: str, expected: Task):
+        token = await asyncio.to_thread(get_secret, "todoist")
+        current = next((task for task in await fetch_tasks(token) if task.id == task_id), None)
+        if current is None or current != expected:
+            raise ServiceError("This task changed in Todoist. Refresh Overview before deleting.", 409)
+        try:
+            await delete_task(token, task_id)
+        except TodoistWriteError as exc:
+            overview_store().invalidate()
+            raise ServiceError(str(exc), exc.status_code) from None
+        overview_store().remove_task(task_id)
+        return {"id": task_id}
+
     @app.post("/api/chat")
     async def chat_message(body: ChatRequest):
         sent_at = chat_now()
@@ -217,7 +294,7 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
                 fetch_tasks(token), fetch_projects(token),
             )
             history = chat_store().recent() + [{"role": "user", "content": body.message.strip(), "created_at": sent_at}]
-            result = await ai.chat(settings, key, history, tasks, project_options)
+            result = await ai.chat(settings, key, history, tasks, project_options, timezone_name=body.timezone)
             chat_store().add_message("user", body.message.strip(), created_at=sent_at)
             # Dialogue state is a write-proposal gate, not merely wording in a prompt.
             if result.phase != "preview" or result.unresolved or result.clarification_question:
@@ -233,14 +310,22 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
                 if action.task_id not in by_id or action.task_id in seen:
                     raise ServiceError("The AI selected an invalid task. Please try again.", 422)
                 seen.add(action.task_id)
-                changes = action.model_dump(include={"content", "description", "due_date", "priority"}, exclude_none=True)
+                changes = action.model_dump(include={"content", "description", "due_date", "deadline_date", "priority"}, exclude_none=True)
                 if action.clear_due:
                     if action.due_date:
                         raise ServiceError("Conflicting due date changes. Please try again.", 422)
                     changes["due_string"] = "no date"
-                if action.due_date:
+                if action.clear_deadline:
+                    if action.deadline_date: raise ServiceError("Conflicting deadline changes.", 422)
+                    changes["deadline_date"] = None
+                if action.clear_duration:
+                    if action.duration_minutes: raise ServiceError("Conflicting duration changes.", 422)
+                    changes.update(duration=None, duration_unit=None)
+                elif action.duration_minutes:
+                    changes.update(duration=action.duration_minutes, duration_unit="minute")
+                for proposed_date in (action.due_date, action.deadline_date):
                     try:
-                        date.fromisoformat(action.due_date)
+                        if proposed_date: date.fromisoformat(proposed_date)
                     except ValueError:
                         raise ServiceError("The AI proposed an invalid date. Please try again.", 422) from None
                 if ("content" in changes and not changes["content"].strip()) or (action.operation == "update" and not changes) or (action.operation == "complete" and changes):
@@ -297,14 +382,18 @@ def create_app(settings: Settings = None, chat_path: Path = None, overview_path:
         for draft in body.drafts:
             if draft.project_id is not None and draft.project_id not in allowed_projects:
                 raise ServiceError("Choose an existing Todoist project or Inbox.", 422)
-            if draft.due_date:
+            for proposed_date in (draft.due_date, draft.deadline_date):
                 try:
-                    date.fromisoformat(draft.due_date)
+                    if proposed_date: date.fromisoformat(proposed_date)
                 except ValueError:
                     raise ServiceError("Use a real due date in YYYY-MM-DD format.", 422) from None
+            if draft.due_date and draft.deadline_date and draft.due_date > draft.deadline_date:
+                raise ServiceError("The planned date must not be after the deadline.", 422)
         results = []
         for draft in body.drafts:
             payload = draft.model_dump(exclude={"id"}, exclude_none=True)
+            duration = payload.pop("duration_minutes", None)
+            if duration: payload.update(duration=duration, duration_unit="minute")
             payload["content"] = payload["content"].strip()
             if not payload["content"]:
                 raise ServiceError("A task title cannot be blank.", 422)
